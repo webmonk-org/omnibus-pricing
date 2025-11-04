@@ -15,6 +15,7 @@ import {
 } from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
+import ProductStatus from "app/components/product-status";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
@@ -129,7 +130,7 @@ export default function Index() {
       <TitleBar title="Omnibus Pricing" />
       <Box width="full" borderColor="border-brand" padding="300">
         <InlineStack align="end" gap="200">
-          <Tooltip active content={`${m} ${d}, 2025, ${timeString}`}>
+          <Tooltip content={`${m} ${d}, 2025, ${timeString}`}>
             <Text as="span">
               Latest update: {timeString}
             </Text>
@@ -207,16 +208,38 @@ export default function Index() {
             </Card>
 
             <Card>
-              <BlockStack gap="300">
-                <Text fontWeight="bold" as="h2" variant="headingMd">
-                  Summary
-                </Text>
-                <Link url="/app/products">
-                  View All Products
-                </Link>
-                <Box>
-                </Box>
+              <BlockStack gap="500">
+                <BlockStack gap="200">
+                  <Text fontWeight="bold" as="h2" variant="headingMd">
+                    Summary
+                  </Text>
+                  <Link url="/app/products" removeUnderline>
+                    View All Products
+                  </Link>
+                </BlockStack>
+                <BlockStack>
+                  <ProductStatus
+                    label="Not compliant"
+                    tooltibContent="The compare at price is higher than the lowest prior price which means that the marketed discount is too high and thus not compliant."
+                    background=""
+                    productsQuantity={0}
+                  />
+                  <ProductStatus
+                    label="Compliant"
+                    tooltibContent="The compare at price is higher than the lowest prior price which means that the marketed discount is too high and thus not compliant."
+                    background="bg-fill-active"
+                    productsQuantity={0}
+                  />
+                  <ProductStatus
+                    label="Not discounted"
+                    tooltibContent="The compare at price is higher than the lowest prior price which means that the marketed discount is too high and thus not compliant."
+                    background=""
+                    productsQuantity={30}
+                    viewProductsParam="omnibus-label-omnibus-not-on-sale"
+                  />
+                </BlockStack>
               </BlockStack>
+
             </Card>
           </BlockStack>
         </Layout.Section>
