@@ -9,9 +9,9 @@ import {
   Button,
   BlockStack,
   Box,
-  List,
   Link,
   InlineStack,
+  Tooltip,
 } from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -108,227 +108,119 @@ export default function Index() {
       shopify.toast.show("Product created");
     }
   }, [productId, shopify]);
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
+  const refreshData = () => {
+    // fetcher.submit({}, { method: "POST" });
+    // TODO:  refreshing data
+  }
+
+  // change this later
+  const now = new Date();
+  const m = now.toLocaleString('en-US', { month: 'short' });
+  const d = now.getDay()
+  const timeString = now.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
 
   return (
     <Page>
-      <TitleBar title="Remix app template">
-        <button variant="primary" onClick={generateProduct}>
-          Generate a product
-        </button>
-      </TitleBar>
-      <BlockStack gap="500">
-        <Layout>
-          <Layout.Section>
+      <TitleBar title="Omnibus Pricing" />
+      <Box width="full" borderColor="border-brand" padding="300">
+        <InlineStack align="end" gap="200">
+          <Tooltip active content={`${m} ${d}, 2025, ${timeString}`}>
+            <Text as="span">
+              Latest update: {timeString}
+            </Text>
+          </Tooltip>
+          <Button onClick={refreshData}>
+            Refersh Data
+          </Button>
+        </InlineStack>
+      </Box>
+      <Layout>
+        <Layout.Section>
+          <BlockStack gap="500">
             <Card>
-              <BlockStack gap="500">
+              <BlockStack gap="400">
+                <Text as="h2" variant="headingMd">
+                  💡 Getting started
+                </Text>
+                <Text as="p">
+                  In order to display the 30-day lowest price on your storefront you have to customize your theme with our code snippet. Our theme extension makes it fast and easy!
+                </Text>
+
+                <Text as="p">
+                  Just follow three simple steps:
+                </Text>
+
+                <Text as="p">
+                  Step 1. Add our theme extension or snippet using our easy-to-follow guide
+                </Text>
+
+                <Text as="p">
+                  Step 2. Configure the theme extension to show the label in your language. If your storefront is available in multiple languages add label translations for all languages
+                </Text>
+                <Text as="p">
+                  Step 3. If your local law requires longer than 30-day period, you can adjust it in the Settings
+                </Text>
+                <Text as="p">
+                  Voila! Your Omnibus Price will now be proudly displayed on your storefront once your products are discounted.
+                </Text>
+
                 <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">
-                    Congrats on creating a new Shopify app 🎉
+                  <Text as="p">
+                    If you need assistance with the installation, just send us a message. We're happy to help!
                   </Text>
-                  <Text variant="bodyMd" as="p">
-                    This embedded app template uses{" "}
-                    <Link
-                      url="https://shopify.dev/docs/apps/tools/app-bridge"
-                      target="_blank"
-                      removeUnderline
-                    >
-                      App Bridge
-                    </Link>{" "}
-                    interface examples like an{" "}
-                    <Link url="/app/additional" removeUnderline>
-                      additional page in the app nav
-                    </Link>
-                    , as well as an{" "}
-                    <Link
-                      url="https://shopify.dev/docs/api/admin-graphql"
-                      target="_blank"
-                      removeUnderline
-                    >
-                      Admin GraphQL
-                    </Link>{" "}
-                    mutation demo, to provide a starting point for app
-                    development.
-                  </Text>
-                </BlockStack>
-                <BlockStack gap="200">
-                  <Text as="h3" variant="headingMd">
-                    Get started with products
-                  </Text>
-                  <Text as="p" variant="bodyMd">
-                    Generate a product with GraphQL and get the JSON output for
-                    that product. Learn more about the{" "}
-                    <Link
-                      url="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-                      target="_blank"
-                      removeUnderline
-                    >
-                      productCreate
-                    </Link>{" "}
-                    mutation in our API references.
-                  </Text>
-                </BlockStack>
-                <InlineStack gap="300">
-                  <Button loading={isLoading} onClick={generateProduct}>
-                    Generate a product
-                  </Button>
-                  {fetcher.data?.product && (
-                    <Button
-                      url={`shopify:admin/products/${productId}`}
-                      target="_blank"
-                      variant="plain"
-                    >
-                      View product
+                  <InlineStack gap="300">
+                    <Button variant="primary" loading={isLoading} onClick={refreshData}>
+                      I need help with the theme installation
                     </Button>
-                  )}
-                </InlineStack>
-                {fetcher.data?.product && (
-                  <>
-                    <Text as="h3" variant="headingMd">
-                      {" "}
-                      productCreate mutation
-                    </Text>
-                    <Box
-                      padding="400"
-                      background="bg-surface-active"
-                      borderWidth="025"
-                      borderRadius="200"
-                      borderColor="border"
-                      overflowX="scroll"
-                    >
-                      <pre style={{ margin: 0 }}>
-                        <code>
-                          {JSON.stringify(fetcher.data.product, null, 2)}
-                        </code>
-                      </pre>
-                    </Box>
-                    <Text as="h3" variant="headingMd">
-                      {" "}
-                      productVariantsBulkUpdate mutation
-                    </Text>
-                    <Box
-                      padding="400"
-                      background="bg-surface-active"
-                      borderWidth="025"
-                      borderRadius="200"
-                      borderColor="border"
-                      overflowX="scroll"
-                    >
-                      <pre style={{ margin: 0 }}>
-                        <code>
-                          {JSON.stringify(fetcher.data.variant, null, 2)}
-                        </code>
-                      </pre>
-                    </Box>
-                  </>
-                )}
+                    <Button>
+                      Go to help center
+                    </Button>
+                  </InlineStack>
+                </BlockStack>
               </BlockStack>
             </Card>
-          </Layout.Section>
-          <Layout.Section variant="oneThird">
-            <BlockStack gap="500">
-              <Card>
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">
-                    App template specs
-                  </Text>
-                  <BlockStack gap="200">
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        Framework
-                      </Text>
-                      <Link
-                        url="https://remix.run"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        Remix
-                      </Link>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        Database
-                      </Text>
-                      <Link
-                        url="https://www.prisma.io/"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        Prisma
-                      </Link>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        Interface
-                      </Text>
-                      <span>
-                        <Link
-                          url="https://polaris.shopify.com"
-                          target="_blank"
-                          removeUnderline
-                        >
-                          Polaris
-                        </Link>
-                        {", "}
-                        <Link
-                          url="https://shopify.dev/docs/apps/tools/app-bridge"
-                          target="_blank"
-                          removeUnderline
-                        >
-                          App Bridge
-                        </Link>
-                      </span>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        API
-                      </Text>
-                      <Link
-                        url="https://shopify.dev/docs/api/admin-graphql"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        GraphQL API
-                      </Link>
-                    </InlineStack>
-                  </BlockStack>
-                </BlockStack>
-              </Card>
-              <Card>
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">
-                    Next steps
-                  </Text>
-                  <List>
-                    <List.Item>
-                      Build an{" "}
-                      <Link
-                        url="https://shopify.dev/docs/apps/getting-started/build-app-example"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        {" "}
-                        example app
-                      </Link>{" "}
-                      to get started
-                    </List.Item>
-                    <List.Item>
-                      Explore Shopify’s API with{" "}
-                      <Link
-                        url="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        GraphiQL
-                      </Link>
-                    </List.Item>
-                  </List>
-                </BlockStack>
-              </Card>
-            </BlockStack>
-          </Layout.Section>
-        </Layout>
-      </BlockStack>
+            <Card>
+              <BlockStack gap="400">
+                <Text as="h2" variant="headingMd">
+                  👋 Welcome
+                </Text>
+                <Text as="p">
+                  Thank you for choosing Sniffie: Omnibus Pricing! We will help keep your discounted product prices inline with the EU Omnibus Directive.
+                </Text>
+                <Text as="p">
+                  EU Omnibus directive requires that retailers show the 30-day lowest price prior to a discount. On this overview page you can see the current state of your Omnibus compliancy.
+                </Text>
+
+                <Text as="p">
+                  You can see a detailed view of your products Pricing info in the “Product” -tab. The app provides you with the 30-day lowest price prior to discount for all active products. Non-compliant products can be fixed by setting Compare at price to the prior lowest price or by removing the Compare at price.
+                </Text>
+
+                <Text variant="bodyMd" as="p">
+                  If you have any feedback or questions, do not hesitate to send us a message via the in-app chat!
+                </Text>
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="300">
+                <Text fontWeight="bold" as="h2" variant="headingMd">
+                  Summary
+                </Text>
+                <Link url="/app/products">
+                  View All Products
+                </Link>
+                <Box>
+                </Box>
+              </BlockStack>
+            </Card>
+          </BlockStack>
+        </Layout.Section>
+      </Layout>
     </Page>
   );
 }
