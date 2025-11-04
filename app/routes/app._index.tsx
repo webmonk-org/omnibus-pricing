@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { useFetcher } from "@remix-run/react";
 import {
@@ -16,6 +16,7 @@ import {
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import ProductStatus from "app/components/product-status";
+import { ReviewBanner } from "app/components/review-banner";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
@@ -94,6 +95,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 export default function Index() {
   const fetcher = useFetcher<typeof action>();
+  const [dispayBanner, setDisplayBanner] = useState(true);
 
   const shopify = useAppBridge();
   const isLoading =
@@ -241,6 +243,23 @@ export default function Index() {
               </BlockStack>
 
             </Card>
+            {
+              dispayBanner && (
+                <ReviewBanner
+                  title='How is your experience with Omnibus Pricing'
+                  description='Click below to rate us on the Shopify App Store'
+                  onReview={(rating) => {
+                    console.log(`Rating: ${rating}`);
+                    // Record analytics
+                  }}
+                  onClose={() => {
+                    // Handle the close action here
+                    console.log('Review banner closed');
+                    setDisplayBanner(false)
+                  }}
+                />
+              )
+            }
           </BlockStack>
         </Layout.Section>
       </Layout>
