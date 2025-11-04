@@ -260,6 +260,19 @@ export default function Index() {
                 />
               )
             }
+            <Card>
+              <BlockStack gap="300">
+                <Text variant="headingMd" fontWeight="semibold" as="h3">
+                  Price history information
+                </Text>
+                <Text variant="bodyMd" as="p">
+                  2 / 30 days collected
+                </Text>
+                <Text variant="bodySm" as="p" tone="subdued">
+                  Until we have the full price history, compliancy cannot be ensured. You can show the lowest price on your storefront, however, it may not be accurate.
+                </Text>
+              </BlockStack>
+            </Card>
           </BlockStack>
         </Layout.Section>
       </Layout>
