@@ -10,11 +10,11 @@ interface BannerProps {
 
 export function ReviewBanner({ title, description, onReview, onClose }: BannerProps) {
   return (
-    <Card padding="0">
+    <Card padding="300">
       <BlockStack gap='400'>
         <Banner title={title} onDismiss={onClose} tone='info' />
         <BlockStack gap="200">
-          <Box paddingInlineStart="500">
+          <Box paddingInlineStart="200">
             <p>{description}</p>
           </Box>
           <ReviewStars onReview={onReview} />
@@ -37,7 +37,7 @@ function ReviewStars({ onReview }: {
   };
 
   return (
-    <div style={{ display: 'flex', gap: '5px', paddingInline: "25px", paddingBottom: "10px" }}>
+    <div style={{ display: 'flex', gap: '5px', paddingInline: "15px", paddingBottom: "10px" }}>
       {[...Array(5)].map((_, index) => (
         <span
           key={index}

@@ -26,7 +26,7 @@ export default function ProductStatus({
           <Tooltip content={tooltibContent}>
             <Icon
               source={QuestionCircleIcon}
-              tone="base"
+              tone="subdued"
             />
           </Tooltip>
         </InlineStack>

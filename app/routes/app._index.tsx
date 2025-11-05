@@ -26,72 +26,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
-            }
-          }
-        }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
-
-  const product = responseJson.data!.productCreate!.product!;
-  const variantId = product.variants.edges[0]!.node!.id!;
-
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyRemixTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
-      }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
-  );
-
-  const variantResponseJson = await variantResponse.json();
-
-  return {
-    product: responseJson!.data!.productCreate!.product,
-    variant:
-      variantResponseJson!.data!.productVariantsBulkUpdate!.productVariants,
-  };
 };
+// shopify toasts:
+// shopify.toast.show("Product created");
 
 export default function Index() {
   const fetcher = useFetcher<typeof action>();
@@ -106,11 +43,6 @@ export default function Index() {
     "",
   );
 
-  useEffect(() => {
-    if (productId) {
-      shopify.toast.show("Product created");
-    }
-  }, [productId, shopify]);
   const refreshData = () => {
     // fetcher.submit({}, { method: "POST" });
     // TODO:  refreshing data
@@ -131,15 +63,17 @@ export default function Index() {
     <Page>
       <TitleBar title="Omnibus Pricing" />
       <Box width="full" borderColor="border-brand" padding="300">
-        <InlineStack align="end" gap="200">
-          <Tooltip content={`${m} ${d}, 2025, ${timeString}`}>
-            <Text as="span">
-              Latest update: {timeString}
-            </Text>
-          </Tooltip>
-          <Button onClick={refreshData}>
-            Refersh Data
-          </Button>
+        <InlineStack align="end">
+          <Box >
+            <Tooltip content={`${m} ${d}, 2025, ${timeString}`}>
+              <Text as="span">
+                Latest update: {timeString}
+              </Text>
+            </Tooltip>
+            <Button onClick={refreshData}>
+              Refersh Data
+            </Button>
+          </Box>
         </InlineStack>
       </Box>
       <Layout>
@@ -193,7 +127,7 @@ export default function Index() {
                   👋 Welcome
                 </Text>
                 <Text as="p">
-                  Thank you for choosing Sniffie: Omnibus Pricing! We will help keep your discounted product prices inline with the EU Omnibus Directive.
+                  Thank you for choosing Omnibus Pricing! We will help keep your discounted product prices inline with the EU Omnibus Directive.
                 </Text>
                 <Text as="p">
                   EU Omnibus directive requires that retailers show the 30-day lowest price prior to a discount. On this overview page you can see the current state of your Omnibus compliancy.
@@ -228,13 +162,13 @@ export default function Index() {
                   />
                   <ProductStatus
                     label="Compliant"
-                    tooltibContent="The compare at price is higher than the lowest prior price which means that the marketed discount is too high and thus not compliant."
+                    tooltibContent="The compare at price is lower than or equal to the lowest prior price which means that the price is Omnibus compliant."
                     background="bg-fill-active"
                     productsQuantity={0}
                   />
                   <ProductStatus
                     label="Not discounted"
-                    tooltibContent="The compare at price is higher than the lowest prior price which means that the marketed discount is too high and thus not compliant."
+                    tooltibContent="The Omnibus directive only applies to discounts."
                     background=""
                     productsQuantity={30}
                     viewProductsParam="omnibus-label-omnibus-not-on-sale"
