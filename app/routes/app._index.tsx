@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import { useCallback, useState } from "react";
+import type { LoaderFunctionArgs } from "@remix-run/node";
 import { useFetcher } from "@remix-run/react";
 import {
   Page,
@@ -12,11 +12,15 @@ import {
   Link,
   InlineStack,
   Tooltip,
+  Icon,
+  Modal,
+  Banner,
 } from "@shopify/polaris";
-import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
+import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import ProductStatus from "app/components/product-status";
 import { ReviewBanner } from "app/components/review-banner";
+import { QuestionCircleIcon } from "@shopify/polaris-icons";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
@@ -24,99 +28,138 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return null;
 };
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
-};
-// shopify toasts:
-// shopify.toast.show("Product created");
-
 export default function Index() {
-  const fetcher = useFetcher<typeof action>();
+  const fetcher = useFetcher();
   const [dispayBanner, setDisplayBanner] = useState(true);
+  const [active, setActive] = useState(false)
+  const [hovered, setHovered] = useState(false)
 
-  const shopify = useAppBridge();
-  const isLoading =
+  const handleChange = useCallback(() => setActive(!active), [active]);
+
+
+  const refreshing =
     ["loading", "submitting"].includes(fetcher.state) &&
     fetcher.formMethod === "POST";
-  const productId = fetcher.data?.product?.id.replace(
-    "gid://shopify/Product/",
-    "",
-  );
 
-  const refreshData = () => {
-    // fetcher.submit({}, { method: "POST" });
-    // TODO:  refreshing data
-  }
+  const handleRefresh = async () => {
+    fetcher.submit({}, { method: "POST", action: "/api/products" });
+
+
+    const { data } = fetcher
+
+    console.log("Products: ", data)
+
+    console.log("Refresh data!")
+  };
 
   // change this later
   const now = new Date();
-  const m = now.toLocaleString('en-US', { month: 'short' });
-  const d = now.getDay()
-  const timeString = now.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    second: '2-digit',
+  const m = now.toLocaleString("en-US", { month: "short" });
+  const d = now.getDay();
+  const timeString = now.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
     hour12: true,
   });
+
+  const activator = <div
+    onMouseEnter={() => setHovered(true)}
+    onMouseLeave={() => setHovered(false)}
+    onClick={handleChange}
+  >
+    <Icon source={QuestionCircleIcon} tone={hovered ? "base" : "subdued"} />
+  </div>
 
   return (
     <Page>
       <TitleBar title="Omnibus Pricing" />
-      <Box width="full" borderColor="border-brand" padding="300">
+      <Box width="full" borderColor="border-brand" paddingBlock="500">
         <InlineStack align="end">
-          <Box >
+          <InlineStack blockAlign="baseline" gap="300">
             <Tooltip content={`${m} ${d}, 2025, ${timeString}`}>
-              <Text as="span">
-                Latest update: {timeString}
-              </Text>
+              <Text as="span">Latest update: {timeString}</Text>
             </Tooltip>
-            <Button onClick={refreshData}>
+            <Button onClick={handleRefresh} loading={refreshing}>
               Refersh Data
             </Button>
-          </Box>
+            <Modal
+              open={active}
+              activator={activator}
+              onClose={handleChange}
+              title="Refreshing data"
+              primaryAction={{
+                content: 'Got it!',
+                onAction: handleChange,
+              }}
+            >
+              <Modal.Section>
+                <Text as="p">
+                  By default, Omnibus status, price history, etc. are calculated once per day. However, if you make changes to products' prices, it is advised to run refresh to get the most recent data available. The process might take up to 60 mins with a large amount of products. Refresh the page to view updated data once the process has finished.
+                </Text>
+              </Modal.Section>
+            </Modal>
+          </InlineStack>
         </InlineStack>
       </Box>
       <Layout>
         <Layout.Section>
           <BlockStack gap="500">
+            {
+              refreshing && (
+                <Banner title="Running calculations" onDismiss={() => { }}>
+                  <p>
+                    The process to get your current product prices, coupons and sales history should not take more than 10 - 60 minutes, depending on the amount of products in your store. Lowest price information will be available once the process has finished.
+                  </p>
+                </Banner>
+              )
+            }
             <Card>
               <BlockStack gap="400">
                 <Text as="h2" variant="headingMd">
                   💡 Getting started
                 </Text>
                 <Text as="p">
-                  In order to display the 30-day lowest price on your storefront you have to customize your theme with our code snippet. Our theme extension makes it fast and easy!
+                  In order to display the 30-day lowest price on your storefront
+                  you have to customize your theme with our code snippet. Our
+                  theme extension makes it fast and easy!
+                </Text>
+
+                <Text as="p">Just follow three simple steps:</Text>
+
+                <Text as="p">
+                  Step 1. Add our theme extension or snippet using our
+                  easy-to-follow guide
                 </Text>
 
                 <Text as="p">
-                  Just follow three simple steps:
-                </Text>
-
-                <Text as="p">
-                  Step 1. Add our theme extension or snippet using our easy-to-follow guide
-                </Text>
-
-                <Text as="p">
-                  Step 2. Configure the theme extension to show the label in your language. If your storefront is available in multiple languages add label translations for all languages
+                  Step 2. Configure the theme extension to show the label in
+                  your language. If your storefront is available in multiple
+                  languages add label translations for all languages
                 </Text>
                 <Text as="p">
-                  Step 3. If your local law requires longer than 30-day period, you can adjust it in the Settings
+                  Step 3. If your local law requires longer than 30-day period,
+                  you can adjust it in the Settings
                 </Text>
                 <Text as="p">
-                  Voila! Your Omnibus Price will now be proudly displayed on your storefront once your products are discounted.
+                  Voila! Your Omnibus Price will now be proudly displayed on
+                  your storefront once your products are discounted.
                 </Text>
 
                 <BlockStack gap="200">
                   <Text as="p">
-                    If you need assistance with the installation, just send us a message. We're happy to help!
+                    If you need assistance with the installation, just send us a
+                    message. We're happy to help!
                   </Text>
                   <InlineStack gap="300">
-                    <Button variant="primary" loading={isLoading} onClick={refreshData}>
+                    <Button
+                      variant="primary"
+                      loading={refreshing}
+                      onClick={handleRefresh}
+                    >
                       I need help with the theme installation
                     </Button>
-                    <Button>
-                      Go to help center
-                    </Button>
+                    <Button>Go to help center</Button>
                   </InlineStack>
                 </BlockStack>
               </BlockStack>
@@ -127,18 +170,28 @@ export default function Index() {
                   👋 Welcome
                 </Text>
                 <Text as="p">
-                  Thank you for choosing Omnibus Pricing! We will help keep your discounted product prices inline with the EU Omnibus Directive.
+                  Thank you for choosing Omnibus Pricing! We will help keep your
+                  discounted product prices inline with the EU Omnibus
+                  Directive.
                 </Text>
                 <Text as="p">
-                  EU Omnibus directive requires that retailers show the 30-day lowest price prior to a discount. On this overview page you can see the current state of your Omnibus compliancy.
+                  EU Omnibus directive requires that retailers show the 30-day
+                  lowest price prior to a discount. On this overview page you
+                  can see the current state of your Omnibus compliancy.
                 </Text>
 
                 <Text as="p">
-                  You can see a detailed view of your products Pricing info in the “Product” -tab. The app provides you with the 30-day lowest price prior to discount for all active products. Non-compliant products can be fixed by setting Compare at price to the prior lowest price or by removing the Compare at price.
+                  You can see a detailed view of your products Pricing info in
+                  the “Product” -tab. The app provides you with the 30-day
+                  lowest price prior to discount for all active products.
+                  Non-compliant products can be fixed by setting Compare at
+                  price to the prior lowest price or by removing the Compare at
+                  price.
                 </Text>
 
                 <Text variant="bodyMd" as="p">
-                  If you have any feedback or questions, do not hesitate to send us a message via the in-app chat!
+                  If you have any feedback or questions, do not hesitate to send
+                  us a message via the in-app chat!
                 </Text>
               </BlockStack>
             </Card>
@@ -175,25 +228,22 @@ export default function Index() {
                   />
                 </BlockStack>
               </BlockStack>
-
             </Card>
-            {
-              dispayBanner && (
-                <ReviewBanner
-                  title='How is your experience with Omnibus Pricing'
-                  description='Click below to rate us on the Shopify App Store'
-                  onReview={(rating) => {
-                    console.log(`Rating: ${rating}`);
-                    // Record analytics
-                  }}
-                  onClose={() => {
-                    // Handle the close action here
-                    console.log('Review banner closed');
-                    setDisplayBanner(false)
-                  }}
-                />
-              )
-            }
+            {dispayBanner && (
+              <ReviewBanner
+                title="How is your experience with Omnibus Pricing"
+                description="Click below to rate us on the Shopify App Store"
+                onReview={(rating) => {
+                  console.log(`Rating: ${rating}`);
+                  // Record analytics
+                }}
+                onClose={() => {
+                  // Handle the close action here
+                  console.log("Review banner closed");
+                  setDisplayBanner(false);
+                }}
+              />
+            )}
             <Card>
               <BlockStack gap="300">
                 <Text variant="headingMd" fontWeight="semibold" as="h3">
@@ -203,13 +253,15 @@ export default function Index() {
                   2 / 30 days collected
                 </Text>
                 <Text variant="bodySm" as="p" tone="subdued">
-                  Until we have the full price history, compliancy cannot be ensured. You can show the lowest price on your storefront, however, it may not be accurate.
+                  Until we have the full price history, compliancy cannot be
+                  ensured. You can show the lowest price on your storefront,
+                  however, it may not be accurate.
                 </Text>
               </BlockStack>
             </Card>
           </BlockStack>
         </Layout.Section>
       </Layout>
-    </Page>
+    </Page >
   );
 }
