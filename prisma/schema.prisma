@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -8,19 +9,106 @@ datasource db {
 }
 
 model Session {
-  id            String    @id
-  shop          String
-  state         String
-  isOnline      Boolean   @default(false)
-  scope         String?
-  expires       DateTime?
-  accessToken   String
-  userId        BigInt?
-  firstName     String?
-  lastName      String?
-  email         String?
-  accountOwner  Boolean   @default(false)
-  locale        String?
-  collaborator  Boolean?  @default(false)
-  emailVerified Boolean?  @default(false)
+  id                    String    @id // once uninstallation, this become id_timestamp instead of deleting session
+  shop                  String    @unique
+  state                 String
+  isOnline              Boolean   @default(false)
+  scope                 String?
+  expires               DateTime?
+  accessToken           String
+  userId                BigInt?
+  firstName             String?
+  lastName              String?
+  email                 String?
+  accountOwner          Boolean   @default(false)
+  locale                String?
+  calculationInProgress Boolean?  @default(false)
+  collaborator          Boolean?  @default(false)
+  emailVerified         Boolean?  @default(false)
+  settings              Json? // contains the calculation period, if multi-market is enabled, which markets etc..
+  uninstallDate      DateTime?
+  Shop         Shop?
+  Subscription Subscription[]
+}
+
+// general information about the shop, mostly for our records
+model Shop {
+  id                 String    @id @default(uuid())
+  shop               String?   @unique
+  myshopifyDomain    String
+  shopId             String
+  primaryDomain      String
+  shopName           String
+  planName           String
+  isShopifyPlus      Boolean
+  isDevStore         Boolean
+  ownerEmail         String
+  ownerName          String
+  currencyCode       String
+  ianaTimezone       String
+  billingCompany     String?
+  billingCity        String?
+  billingCountry     String?
+  billingCountryCode String?
+  billingPhone       String?
+  creationDate       DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime? @updatedAt
+  Session Session? @relation(fields: [shop], references: [shop])
+}
+
+// Subscription will be based on variant count, per market.
+model Subscription {
+  id               String             @id
+  shop             String?
+  myshopifyDomain  String
+  createdAt        DateTime
+  updatedAt        DateTime
+  planId           PlanId
+  status           SubscriptionStatus
+  currency         String
+  amount           Float
+  interval         String
+  isTest           Boolean            @default(false)
+  currentPeriodEnd DateTime?
+  canceledAt       DateTime?
+  trialDays        Int?
+  variantCount     Int                @default(0)
+  marketCount      Int                @default(0)
+
+  billingMetadata Json? // Store additional billing info
+  Session Session? @relation(fields: [shop], references: [shop])
+  @@index([shop])
+  @@index([status])
+  @@index([currentPeriodEnd])
+}
+
+enum PlanId {
+  BASIC
+  PRO
+  PLUS
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+}
+
+// Each row represents a Shopify variant, this is used for tracking compliance status when calculating omnibus prices
+model Variant {
+  id                String   @id @default(cuid())
+  shop              String
+  productId         String
+  variantId         String
+  status            String   // "active" | "archived" - tracks if product should be processed
+
+  // Omnibus-specific tracking
+  lastProcessedAt   DateTime?
+  complianceStatus  String?  // "compliant" | "non_compliant" | "not_on_sale" | "not_enough_data"
+  currentDiscountStartedAt DateTime? // When current discount started
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  @@unique([shop, variantId])
+  @@index([shop, status])
 }
