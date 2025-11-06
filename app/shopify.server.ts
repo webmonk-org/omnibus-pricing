@@ -21,7 +21,11 @@ export const shopify = shopifyApp({
   webhooks: {
     APP_UNINSTALLED: {
       deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: '/webhooks',
+      callbackUrl: '/webhooks/app/uninstalled',
+    },
+    BULK_OPERATIONS_FINISH: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: '/webhooks/bulk_finish',
     },
   },
   hooks: {
@@ -45,8 +49,3 @@ export const unauthenticated = shopify.unauthenticated;
 export const login = shopify.login;
 export const registerWebhooks = shopify.registerWebhooks;
 export const sessionStorage = shopify.sessionStorage;
-
-// async function runAfterAuthLogic(session: any, admin: any) {
-// }
-//
-// export { runAfterAuthLogic };
