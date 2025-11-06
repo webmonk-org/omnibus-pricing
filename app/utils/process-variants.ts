@@ -1,13 +1,17 @@
 import db from "app/db.server";
 
 function mapProductStatus(shopifyStatus?: string | null): "active" | "archived" {
-  // You can tweak this mapping as you like
   if (shopifyStatus === "ACTIVE") return "active";
-  return "archived"; // DRAFT / ARCHIVED → "archived" = not to be processed
+  return "archived";
 }
+
+// productId -> status
+const productStatus = new Map<string, "active" | "archived">();
 
 export async function processVariants(url: string, shop: string) {
   console.log("JSONL data parser is running...");
+
+  productStatus.clear();
 
   const res = await fetch(url);
   if (!res.ok || !res.body) {
@@ -18,9 +22,6 @@ export async function processVariants(url: string, shop: string) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-
-  // Keep a small in-memory map of productId → status
-  const productStatus = new Map<string, "active" | "archived">();
 
   let lineCount = 0;
   let variantCount = 0;
@@ -49,18 +50,27 @@ export async function processVariants(url: string, shop: string) {
       const id = record.id as string | undefined;
       const parentId = record.__parentId as string | undefined;
 
-      // 👇 Product row
+      // Product row (no __parentId, has status)
       if (id && !parentId && record.status) {
         const status = mapProductStatus(record.status);
         productStatus.set(id, status);
         continue;
       }
 
-      // 👇 Variant row (has __parentId)
+      // Variant row (has __parentId)
       if (id && parentId) {
         const variantId = id;
         const productId = parentId;
         const status = productStatus.get(productId) ?? "active";
+
+        // 🔍 compute discount-related fields + lastProcessedAt
+        const discountData = await computeVariantDiscountFields({
+          record,
+          shop,
+          variantId,
+          productId,
+          status,
+        });
 
         console.log("Saving variant:", { variantId, productId, status });
 
@@ -71,64 +81,83 @@ export async function processVariants(url: string, shop: string) {
           update: {
             productId,
             status,
-            // updatedAt is auto-handled by Prisma @updatedAt
+            lastProcessedAt: discountData.lastProcessedAt,
+            currentDiscountStartedAt: discountData.currentDiscountStartedAt,
+            complianceStatus: discountData.complianceStatus,
           },
           create: {
             shop,
             productId,
             variantId,
             status,
+            lastProcessedAt: discountData.lastProcessedAt,
+            currentDiscountStartedAt: discountData.currentDiscountStartedAt,
+            complianceStatus: discountData.complianceStatus,
           },
         });
 
         variantCount++;
       }
-    }
-  }
-
-  // Handle any trailing partial line in buffer (optional safety)
-  if (buffer.trim().length) {
-    try {
-      const record = JSON.parse(buffer);
-      lineCount++;
-
-      const id = record.id as string | undefined;
-      const parentId = record.__parentId as string | undefined;
-
-      if (id && !parentId && record.status) {
-        const status = mapProductStatus(record.status);
-        productStatus.set(id, status);
-      } else if (id && parentId) {
-        const variantId = id;
-        const productId = parentId;
-        const status = productStatus.get(productId) ?? "active";
-
-        console.log("Saving variant (tail):", { variantId, productId, status });
-
-        await db.variant.upsert({
-          where: {
-            shop_variantId: { shop, variantId },
-          },
-          update: {
-            productId,
-            status,
-          },
-          create: {
-            shop,
-            productId,
-            variantId,
-            status,
-          },
-        });
-
-        variantCount++;
-      }
-    } catch (e) {
-      console.error("Failed to parse tail buffer as JSON:", buffer);
     }
   }
 
   console.log(
     `Parsed ${lineCount} lines and saved ${variantCount} variants for ${shop}`,
   );
+}
+
+type DiscountContext = {
+  record: any;
+  shop: string;
+  variantId: string;
+  productId: string;
+  status: "active" | "archived";
+};
+
+async function computeVariantDiscountFields({
+  record,
+  shop,
+  variantId,
+}: DiscountContext) {
+  const now = new Date();
+
+  const price = record.price != null ? parseFloat(record.price) : null;
+  const compareAtPrice =
+    record.compareAtPrice != null ? parseFloat(record.compareAtPrice) : null;
+
+  const isDiscounted =
+    price !== null &&
+    compareAtPrice !== null &&
+    compareAtPrice > price;
+
+  const existing = await db.variant.findUnique({
+    where: {
+      shop_variantId: { shop, variantId },
+    },
+  });
+
+  let currentDiscountStartedAt: Date | null =
+    existing?.currentDiscountStartedAt ?? null;
+  let complianceStatus: string | null = existing?.complianceStatus ?? null;
+
+  if (isDiscounted) {
+    // Newly discounted → start period now
+    if (!existing?.currentDiscountStartedAt) {
+      currentDiscountStartedAt = now;
+    }
+    // Until you’ve done Omnibus checks
+    if (!complianceStatus || complianceStatus === "not_on_sale") {
+      complianceStatus = "not_enough_data";
+    }
+  } else {
+    // No discount → not on sale
+    currentDiscountStartedAt = null;
+    complianceStatus = "not_on_sale";
+  }
+
+  return {
+    lastProcessedAt: now,
+    currentDiscountStartedAt,
+    complianceStatus,
+  };
 }
