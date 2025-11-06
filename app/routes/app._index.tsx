@@ -15,6 +15,7 @@ import {
   Icon,
   Modal,
   Banner,
+  SkeletonBodyText,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -30,24 +31,38 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function Index() {
   const fetcher = useFetcher();
+  const summaryFetcher = useFetcher()
   const [dispayBanner, setDisplayBanner] = useState(true);
   const [active, setActive] = useState(false)
   const [hovered, setHovered] = useState(false)
+  const [refreshing, setRefreshing] = useState(false);
 
   const handleChange = useCallback(() => setActive(!active), [active]);
 
+  const laodingSummary = ["loading", "submitting"].includes(fetcher.state) &&
+    summaryFetcher.formMethod === "GET";
 
-  const refreshing =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
+  // const refreshing =
+  //   ["loading", "submitting"].includes(fetcher.state) &&
+  //   fetcher.formMethod === "POST";
 
   const handleRefresh = async () => {
-    fetcher.submit({}, { method: "POST", action: "/api/products" });
+    setRefreshing(true)
+    // fetcher.submit({}, { method: "POST", action: "/api/products" });
+    //  give React a chance to render
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // simulate async fetch
+    console.log("Fetching...");
+    await new Promise(resolve => setTimeout(resolve, 4000));
+    console.log("Done fetching!");
+
+    setRefreshing(false)
 
 
-    const { data } = fetcher
-
-    console.log("Products: ", data)
+    // const { data } = fetcher
+    //
+    // console.log("Products: ", data)
 
     console.log("Refresh data!")
   };
@@ -63,13 +78,13 @@ export default function Index() {
     hour12: true,
   });
 
-  const activator = <div
+  const activator = (<div
     onMouseEnter={() => setHovered(true)}
     onMouseLeave={() => setHovered(false)}
     onClick={handleChange}
   >
     <Icon source={QuestionCircleIcon} tone={hovered ? "base" : "subdued"} />
-  </div>
+  </div>)
 
   return (
     <Page>
@@ -83,6 +98,7 @@ export default function Index() {
             <Button onClick={handleRefresh} loading={refreshing}>
               Refersh Data
             </Button>
+
             <Modal
               open={active}
               activator={activator}
@@ -202,9 +218,16 @@ export default function Index() {
                   <Text fontWeight="bold" as="h2" variant="headingMd">
                     Summary
                   </Text>
-                  <Link url="/app/products" removeUnderline>
-                    View All Products
-                  </Link>
+                  {
+                    // NOTE: change this to listen to fetching summary loading state
+                    !refreshing ? (
+                      <SkeletonBodyText lines={1} />
+                    ) : (
+                      <Link url="/app/products" removeUnderline>
+                        View All Products
+                      </Link>
+                    )
+                  }
                 </BlockStack>
                 <BlockStack>
                   <ProductStatus
@@ -212,12 +235,14 @@ export default function Index() {
                     tooltibContent="The compare at price is higher than the lowest prior price which means that the marketed discount is too high and thus not compliant."
                     background=""
                     productsQuantity={0}
+                    loading={true}
                   />
                   <ProductStatus
                     label="Compliant"
                     tooltibContent="The compare at price is lower than or equal to the lowest prior price which means that the price is Omnibus compliant."
                     background="bg-fill-active"
                     productsQuantity={0}
+                    loading={true}
                   />
                   <ProductStatus
                     label="Not discounted"
@@ -225,6 +250,7 @@ export default function Index() {
                     background=""
                     productsQuantity={30}
                     viewProductsParam="omnibus-label-omnibus-not-on-sale"
+                    loading={true}
                   />
                 </BlockStack>
               </BlockStack>
