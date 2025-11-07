@@ -1,4 +1,6 @@
+import type { SessionData } from "@remix-run/node";
 import db from "app/db.server";
+import type { DiscountContext } from "app/types";
 
 function mapProductStatus(shopifyStatus?: string | null): "active" | "archived" {
   if (shopifyStatus === "ACTIVE") return "active";
@@ -106,13 +108,6 @@ export async function processVariants(url: string, shop: string) {
   );
 }
 
-type DiscountContext = {
-  record: any;
-  shop: string;
-  variantId: string;
-  productId: string;
-  status: "active" | "archived";
-};
 
 async function computeVariantDiscountFields({
   record,
@@ -141,16 +136,16 @@ async function computeVariantDiscountFields({
   let complianceStatus: string | null = existing?.complianceStatus ?? null;
 
   if (isDiscounted) {
-    // Newly discounted → start period now
+    // Newly discounted so start period now
     if (!existing?.currentDiscountStartedAt) {
       currentDiscountStartedAt = now;
     }
-    // Until you’ve done Omnibus checks
+    // Until we done Omnibus checks
     if (!complianceStatus || complianceStatus === "not_on_sale") {
       complianceStatus = "not_enough_data";
     }
   } else {
-    // No discount → not on sale
+    // No discount so not on sale
     currentDiscountStartedAt = null;
     complianceStatus = "not_on_sale";
   }
@@ -160,4 +155,17 @@ async function computeVariantDiscountFields({
     currentDiscountStartedAt,
     complianceStatus,
   };
+}
+
+export async function updateCalculationInProgress(session: SessionData, BoolValue: boolean) {
+  try {
+    await db.session.update({
+      where: { shop: session.shop },
+      data: {
+        calculationInProgress: BoolValue,
+      },
+    });
+  } catch (err) {
+    console.error("Error updating calculationInProgress: ", err)
+  }
 }

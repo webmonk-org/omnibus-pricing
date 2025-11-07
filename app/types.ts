@@ -59,3 +59,36 @@ export type Subscription = {
   billingMetadata?: Record<string, any> | null; // JSON type
   Session?: Session | null;
 };
+
+export type VariantStatus = 'active' | 'archived';
+export type ComplianceStatus = 'compliant' | 'non_compliant' | 'not_on_sale' | 'not_enough_data';
+
+export interface Variant {
+  id: string;
+  shop: string;
+  productId: string;
+  variantId: string;
+  status: VariantStatus;
+
+  lastProcessedAt?: Date | null;
+  complianceStatus?: ComplianceStatus | null;
+  currentDiscountStartedAt?: Date | null;
+
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type ComplianceKey =
+  | "compliant"
+  | "non_compliant"
+  | "not_on_sale"
+  | "not_enough_data";
+
+
+export interface DiscountContext {
+  record: any;
+  shop: string;
+  variantId: string;
+  productId: string;
+  status: "active" | "archived";
+};
