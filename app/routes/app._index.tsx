@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { useFetcher } from "@remix-run/react";
+import { useFetcher, useLoaderData } from "@remix-run/react";
 import {
   Page,
   Layout,
@@ -22,15 +22,58 @@ import { authenticate } from "../shopify.server";
 import ProductStatus from "app/components/product-status";
 import { ReviewBanner } from "app/components/review-banner";
 import { QuestionCircleIcon } from "@shopify/polaris-icons";
+import db from "app/db.server"
+import type { ComplianceKey } from "app/types";
+
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
 
-  return null;
+  const dbSession = await db.session.findFirst({
+    where: { shop: session.shop },
+    select: {
+      calculationInProgress: true,
+    }
+  });
+
+  const statsRaw = await db.variant.groupBy({
+    where: {
+      shop: session.shop,
+      status: "active", // optional: only active variants
+    },
+    by: ["complianceStatus"],
+    _count: {
+      _all: true,
+    },
+  });
+
+
+  // Build a stable object with default 0s
+  const complianceStats: Record<ComplianceKey, number> = {
+    compliant: 0,
+    non_compliant: 0,
+    not_on_sale: 0,
+    not_enough_data: 0,
+  };
+
+  for (const row of statsRaw) {
+    const key = row.complianceStatus as ComplianceKey | null;
+    if (key && key in complianceStats) {
+      complianceStats[key] = row._count._all;
+    }
+  }
+  console.log("complianceStats:", complianceStats);
+
+  return Response.json({
+    calculationInProgress: dbSession?.calculationInProgress,
+    complianceStats
+  });
 };
 
 export default function Index() {
-  const fetcher = useFetcher();
+  const { calculationInProgress, complianceStats } = useLoaderData<typeof loader>();
+  // const fetcher = useFetcher();
+
   const summaryFetcher = useFetcher()
   const [dispayBanner, setDisplayBanner] = useState(true);
   const [active, setActive] = useState(false)
@@ -39,7 +82,7 @@ export default function Index() {
 
   const handleChange = useCallback(() => setActive(!active), [active]);
 
-  const laodingSummary = ["loading", "submitting"].includes(fetcher.state) &&
+  const laodingSummary = ["loading", "submitting"].includes(summaryFetcher.state) &&
     summaryFetcher.formMethod === "GET";
 
   // const refreshing =
@@ -86,6 +129,26 @@ export default function Index() {
     <Icon source={QuestionCircleIcon} tone={hovered ? "base" : "subdued"} />
   </div>)
 
+  // {
+  //   "id": "offline_omnibus-pricing.myshopify.com",
+  //   "shop": "omnibus-pricing.myshopify.com",
+  //   "state": "",
+  //   "isOnline": false,
+  //   "scope": "write_products",
+  //   "expires": null,
+  //   "accessToken": "shpua_e7bae77ae270e7222ad5447a141b56b8",
+  //   "userId": null,
+  //   "firstName": null,
+  //   "lastName": null,
+  //   "email": null,
+  //   "accountOwner": false,
+  //   "locale": null,
+  //   "calculationInProgress": false,
+  //   "collaborator": false,
+  //   "emailVerified": false,
+  //   "settings": null,
+  //   "uninstallDate": null
+  // }
   return (
     <Page>
       <TitleBar title="Omnibus Pricing" />
@@ -95,7 +158,7 @@ export default function Index() {
             <Tooltip content={`${m} ${d}, 2025, ${timeString}`}>
               <Text as="span">Latest update: {timeString}</Text>
             </Tooltip>
-            <Button onClick={handleRefresh} loading={refreshing}>
+            <Button onClick={handleRefresh} loading={refreshing || calculationInProgress}>
               Refersh Data
             </Button>
 
@@ -122,7 +185,7 @@ export default function Index() {
         <Layout.Section>
           <BlockStack gap="500">
             {
-              refreshing && (
+              calculationInProgress && (
                 <Banner title="Running calculations" onDismiss={() => { }}>
                   <p>
                     The process to get your current product prices, coupons and sales history should not take more than 10 - 60 minutes, depending on the amount of products in your store. Lowest price information will be available once the process has finished.
@@ -234,23 +297,23 @@ export default function Index() {
                     label="Not compliant"
                     tooltibContent="The compare at price is higher than the lowest prior price which means that the marketed discount is too high and thus not compliant."
                     background=""
-                    productsQuantity={0}
-                    loading={true}
+                    productsQuantity={complianceStats?.non_compliant}
+                    loading={false}
                   />
                   <ProductStatus
                     label="Compliant"
                     tooltibContent="The compare at price is lower than or equal to the lowest prior price which means that the price is Omnibus compliant."
                     background="bg-fill-active"
-                    productsQuantity={0}
-                    loading={true}
+                    productsQuantity={complianceStats?.compliant}
+                    loading={false}
                   />
                   <ProductStatus
                     label="Not discounted"
                     tooltibContent="The Omnibus directive only applies to discounts."
                     background=""
-                    productsQuantity={30}
+                    productsQuantity={complianceStats?.not_on_sale}
                     viewProductsParam="omnibus-label-omnibus-not-on-sale"
-                    loading={true}
+                    loading={false}
                   />
                 </BlockStack>
               </BlockStack>

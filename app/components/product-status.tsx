@@ -1,14 +1,14 @@
-import { Link, InlineStack, Text, Tooltip, Icon, Box, SkeletonBodyText, SkeletonDisplayText } from "@shopify/polaris"
+import { Link, InlineStack, Text, Tooltip, Icon, Box, SkeletonBodyText } from "@shopify/polaris"
 import {
   QuestionCircleIcon
 } from '@shopify/polaris-icons';
 
 interface Props {
-  label: string,
-  tooltibContent: string,
-  productsQuantity: number
+  label: string
+  tooltibContent: string
+  productsQuantity: number | null
   viewProductsParam?: string
-  loading: boolean;
+  loading: boolean
   background: string
 }
 
@@ -47,14 +47,14 @@ export default function ProductStatus({
         ) : (
 
           <>
+            <InlineStack>
+              <Text as="span">
+                {productsQuantity || 0} products
+              </Text>
+            </InlineStack>
             <InlineStack align="end">
               {/* NOTE: count the percentage value  */}
               <Text as="span">0%</Text>
-            </InlineStack>
-            <InlineStack>
-              <Text as="span">
-                {productsQuantity} products
-              </Text>
             </InlineStack>
           </>
         )
