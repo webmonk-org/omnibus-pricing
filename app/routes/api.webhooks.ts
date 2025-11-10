@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs } from '@remix-run/node';
 import { authenticate } from 'app/shopify.server';
-import { bulkOpFinish, scopesUpdate, uninstalled } from 'app/utils/webhooks-handler';
+import { bulkOpFinish, handleCreateCollection, handleDeleteCollection, handleProductCreate, handleProductDelete, handleProductUpdate, handleUpdateCollection, scopesUpdate, uninstalled } from 'app/utils/webhooks-handler';
 
 const webhookIdsStore = new Set<string>();
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -25,15 +25,58 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return new Response();
     }
 
+    // for later:
+    // await sendWebhookToQueue({
+    //   shop,
+    //   topic,
+    //   payload,
+    //   receivedAt: new Date().toISOString()
+    // })
+
     switch (topic) {
       case 'APP_UNINSTALLED':
         await uninstalled(shop);
         break;
       case 'BULK_OPERATIONS_FINISH':
-        await bulkOpFinish(admin, payload, shop, session)
+        await bulkOpFinish(admin, payload.admin_graphql_api_id, shop, session)
         break;
       case 'APP_SCOPES_UPDATE':
         await scopesUpdate(payload, session);
+        break;
+      // shop updates:
+      case 'SHOP_UPDATE':
+        console.log("update shop");
+        break;
+      // product related topics:
+      case 'PRODUCTS_CREATE':
+        handleProductCreate(payload, shop)
+        break;
+      case 'PRODUCTS_UPDATE':
+        handleProductUpdate(payload, shop)
+        break;
+      case 'PRODUCTS_DELETE':
+        handleProductDelete(payload, shop)
+        break;
+      // collection related
+      case 'COLLECTIONS_CREATE':
+        handleCreateCollection(payload, shop, admin)
+        break;
+      case 'COLLECTIONS_UPDATE':
+        handleUpdateCollection(payload, shop, admin)
+        break;
+      case 'COLLECTIONS_DELETE':
+        console.log("delete collections");
+        handleDeleteCollection(payload, shop, admin)
+        break;
+      // discount related
+      case 'DISCOUNTS_CREATE':
+        console.log("create discounts");
+        break;
+      case 'DISCOUNTS_UPDATE':
+        console.log("update discounts");
+        break;
+      case 'DISCOUNTS_DELETE':
+        console.log("delete discounts");
         break;
       default:
         throw new Error('Unhandled webhook topic: ' + topic);

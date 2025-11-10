@@ -1,14 +1,29 @@
-import type { SessionData } from "@remix-run/node";
 import db from "app/db.server";
 import type { DiscountContext } from "app/types";
 
 function mapProductStatus(shopifyStatus?: string | null): "active" | "archived" {
-  if (shopifyStatus === "ACTIVE") return "active";
-  return "archived";
+  return shopifyStatus === "ACTIVE" ? "active" : "archived";
 }
 
-// productId -> status
-const productStatus = new Map<string, "active" | "archived">();
+// productId (numeric) -> status
+const productStatus = new Map<bigint, "active" | "archived">();
+
+// 🔧 Helper: GID or plain numeric -> BigInt numeric ID
+function toBigIntId(raw: string | number | bigint | undefined): bigint {
+  if (raw === undefined || raw === null) {
+    throw new Error("toBigIntId received undefined/null");
+  }
+
+  if (typeof raw === "bigint") return raw;
+  if (typeof raw === "number") return BigInt(raw);
+
+  // string: "gid://shopify/Product/9008472228089" OR "9008472228089"
+  const match = raw.match(/(\d+)$/);
+  if (!match) {
+    throw new Error(`Could not extract numeric ID from value: ${raw}`);
+  }
+  return BigInt(match[1]);
+}
 
 export async function processVariants(url: string, shop: string) {
   console.log("JSONL data parser is running...");
@@ -49,50 +64,72 @@ export async function processVariants(url: string, shop: string) {
         continue;
       }
 
-      const id = record.id as string | undefined;
-      const parentId = record.__parentId as string | undefined;
+      const rawId = record.id as string | undefined;
+      const rawParentId = record.__parentId as string | undefined;
 
-      // Product row (no __parentId, has status)
-      if (id && !parentId && record.status) {
+      // 🧱 Product row (no __parentId, has status)
+      if (rawId && !rawParentId && record.status) {
+        const productId = toBigIntId(rawId); // BigInt numeric
         const status = mapProductStatus(record.status);
-        productStatus.set(id, status);
+
+        console.log("Product row:");
+        console.log("  raw product GID:", rawId);
+        console.log("  numeric productId:", productId.toString());
+        console.log("  mapped status:", status);
+
+        productStatus.set(productId, status);
         continue;
       }
 
-      // Variant row (has __parentId)
-      if (id && parentId) {
-        const variantId = id;
-        const productId = parentId;
+      // 🧬 Variant row (has __parentId)
+      if (rawId && rawParentId) {
+        const variantId = toBigIntId(rawId);        // BigInt numeric
+        const productId = toBigIntId(rawParentId);  // BigInt numeric
         const status = productStatus.get(productId) ?? "active";
 
-        // 🔍 compute discount-related fields + lastProcessedAt
+        console.log("Variant row:");
+        console.log("  raw variant GID:", rawId);
+        console.log("  raw product GID:", rawParentId);
+        console.log("  numeric variantId:", variantId.toString());
+        console.log("  numeric productId:", productId.toString());
+        console.log("  resolved status:", status);
+
         const discountData = await computeVariantDiscountFields({
           record,
           shop,
-          variantId,
-          productId,
+          variantId,  // bigint
+          productId,  // bigint (in case DiscountContext uses it later)
           status,
         });
 
-        console.log("Saving variant:", { variantId, productId, status });
+        console.log("Saving variant:", {
+          shop,
+          variantId: variantId.toString(),
+          productId: productId.toString(),
+          status,
+        });
 
         await db.variant.upsert({
           where: {
-            shop_variantId: { shop, variantId },
+            // matches @@unique([shop, variantId]) → name: shop_variantId
+            shop_variantId: {
+              shop,
+              variantId,
+            },
           },
           update: {
             productId,
             status,
-            lastProcessedAt: discountData.lastProcessedAt,
             currentDiscountStartedAt: discountData.currentDiscountStartedAt,
             complianceStatus: discountData.complianceStatus,
+            // if you later add lastProcessedAt to Variant, set it here:
+            // lastProcessedAt: discountData.lastProcessedAt,
           },
           create: {
             shop,
             productId,
             variantId,
             status,
-            lastProcessedAt: discountData.lastProcessedAt,
             currentDiscountStartedAt: discountData.currentDiscountStartedAt,
             complianceStatus: discountData.complianceStatus,
           },
@@ -108,15 +145,15 @@ export async function processVariants(url: string, shop: string) {
   );
 }
 
-
-async function computeVariantDiscountFields({
+export async function computeVariantDiscountFields({
   record,
   shop,
   variantId,
 }: DiscountContext) {
   const now = new Date();
 
-  const price = record.price != null ? parseFloat(record.price) : null;
+  const price =
+    record.price != null ? parseFloat(record.price) : null;
   const compareAtPrice =
     record.compareAtPrice != null ? parseFloat(record.compareAtPrice) : null;
 
@@ -140,7 +177,7 @@ async function computeVariantDiscountFields({
     if (!existing?.currentDiscountStartedAt) {
       currentDiscountStartedAt = now;
     }
-    // Until we done Omnibus checks
+    // Until we’ve done Omnibus checks
     if (!complianceStatus || complianceStatus === "not_on_sale") {
       complianceStatus = "not_enough_data";
     }
@@ -151,11 +188,15 @@ async function computeVariantDiscountFields({
   }
 
   return {
-    lastProcessedAt: now,
+    lastProcessedAt: now, // not stored yet, but useful if you add a field later
     currentDiscountStartedAt,
     complianceStatus,
   };
 }
+
+
+
+
 
 export async function updateCalculationInProgress(session: SessionData, BoolValue: boolean) {
   try {
@@ -168,4 +209,5 @@ export async function updateCalculationInProgress(session: SessionData, BoolValu
   } catch (err) {
     console.error("Error updating calculationInProgress: ", err)
   }
+  return;
 }

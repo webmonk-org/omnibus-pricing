@@ -2,7 +2,9 @@ import type { Session } from '@shopify/shopify-app-remix/server';
 import db from '../db.server'
 import type { AdminApiContextWithoutRest } from 'node_modules/@shopify/shopify-app-remix/dist/ts/server/clients';
 import type { Shop } from '@prisma/client';
-import { registerWebhooks } from "app/shopify.server"
+import { triggerBulkOperation } from 'app/utils/trigger-bulk-operation';
+import { updateCalculationInProgress } from 'app/utils/process-variants';
+import { bulkOpFinish } from 'app/utils/webhooks-handler';
 
 async function getShop(admin: AdminApiContextWithoutRest) {
   const query = `
@@ -70,67 +72,8 @@ async function getShop(admin: AdminApiContextWithoutRest) {
   return shopObject;
 }
 
-async function triggerBulkOperation(admin: AdminApiContextWithoutRest) {
-  const mutation = `
-    mutation {
-      bulkOperationRunQuery(
-        query: """
-        {
-          products {
-            edges {
-              node {
-                id
-                title
-                status
-                variants {
-                  edges {
-                    node {
-                      id
-                      title
-                      sku
-                      price
-                      compareAtPrice
-                      inventoryQuantity
-                    }
-                  }
-                }
-              }
-            }
-          }
-          collections {
-            edges {
-              node {
-                id
-                title
-                handle
-              }
-            }
-          }
-        }
-        """
-      ) {
-        bulkOperation {
-          id
-          status
-        }
-        userErrors {
-          field
-          message
-        }
-      }
-    }
-  `;
-
-  const result = await admin.graphql(mutation);
-  const { data } = await result.json();
-
-  return data.bulkOperationRunQuery.bulkOperation.status;
-
-}
 
 export async function afterAuthHook({ admin, session }: { admin: AdminApiContextWithoutRest; session: Session }) {
-  await registerWebhooks({ session });
-  console.log("app url : ", process.env.SHOPIFY_APP_URL)
   try {
     const shopObject = await getShop(admin);
 
@@ -139,10 +82,17 @@ export async function afterAuthHook({ admin, session }: { admin: AdminApiContext
       { data: shopObject }
     );
 
-    const status = await triggerBulkOperation(admin);
-    console.log("Bulk status: ", status)
+    // trigger a builk operation job
+    const result = await triggerBulkOperation(admin);
+    console.log("Bulk status: ", result.status)
+    setTimeout(() => {
+      bulkOpFinish(admin, result.id, session.shop, session)
+    }, 5000)
 
-  } catch (error: any) {
-    console.log(`Error on afterAuthHook:  `);
+    // set calculationInProgress to true
+    updateCalculationInProgress(session, true);
+
+  } catch (error) {
+    console.log(`Error on afterAuthHook:  `, error);
   }
 }

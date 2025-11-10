@@ -21,12 +21,20 @@ export const shopify = shopifyApp({
   webhooks: {
     APP_UNINSTALLED: {
       deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: '/webhooks/app/uninstalled',
+      callbackUrl: '/api/webhooks',
     },
     BULK_OPERATIONS_FINISH: {
       deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: '/webhooks/bulk_finish',
+      callbackUrl: '/api/webhooks',
     },
+    APP_SCOPES_UPDATE: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: '/api/webhooks',
+    },
+    PRODUCTS_UPDATE: {
+      deliveryMethod: DeliveryMethod.EventBridge,
+      arn: "arn:aws:events:eu-north-1:982534349423:rule/aws.partner/shopify.com/293497536513/omnibus-pricing/omnibus-pricing"
+    }
   },
   hooks: {
     afterAuth: afterAuthHook

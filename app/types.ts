@@ -66,11 +66,10 @@ export type ComplianceStatus = 'compliant' | 'non_compliant' | 'not_on_sale' | '
 export interface Variant {
   id: string;
   shop: string;
-  productId: string;
-  variantId: string;
+  productId: number;
+  variantId: number;
   status: VariantStatus;
 
-  lastProcessedAt?: Date | null;
   complianceStatus?: ComplianceStatus | null;
   currentDiscountStartedAt?: Date | null;
 
@@ -88,7 +87,7 @@ export type ComplianceKey =
 export interface DiscountContext {
   record: any;
   shop: string;
-  variantId: string;
-  productId: string;
+  variantId: BigInt;
+  productId: BigInt;
   status: "active" | "archived";
 };
