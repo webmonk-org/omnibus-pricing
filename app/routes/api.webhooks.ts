@@ -14,6 +14,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       webhookIdsStore.add(webhookId);
     }
 
+    if (!payload || !payload.id) {
+      console.log("Missing payload!");
+      return;
+    }
+
     console.log('------------------ Webhook Received ------------------');
     console.log('webhookId: ', webhookId);
     console.log('topic: ', topic);
@@ -66,7 +71,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         break;
       case 'COLLECTIONS_DELETE':
         console.log("delete collections");
-        handleDeleteCollection(payload, shop, admin)
+        handleDeleteCollection(payload, shop)
         break;
       // discount related
       case 'DISCOUNTS_CREATE':

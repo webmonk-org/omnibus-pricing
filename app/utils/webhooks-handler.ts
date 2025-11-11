@@ -60,11 +60,6 @@ export async function bulkOpFinish(admin: AdminApiContextWithoutRest, id: string
 
 export async function handleProductCreate(payload: any, shop: string) {
   try {
-    if (!payload || !Array.isArray(payload.variants) || payload.variants.length === 0) {
-      console.log("product/create webhook with no variants, nothing to do");
-      return;
-    }
-
     console.log("Comming payload is : ", payload);
 
     const productId = BigInt(payload.id);
@@ -112,11 +107,6 @@ export async function handleProductCreate(payload: any, shop: string) {
 
 export async function handleProductUpdate(payload: any, shop: string) {
   try {
-    if (!payload || !Array.isArray(payload.variants) || payload.variants.length === 0) {
-      console.log("products/update webhook with no variants, nothing to do");
-      return;
-    }
-
     const productId = BigInt(payload.id);
 
     const productStatus =
@@ -180,11 +170,6 @@ export async function handleProductUpdate(payload: any, shop: string) {
 
 export async function handleProductDelete(payload: any, shop: string) {
   try {
-    if (!payload || !payload.id) {
-      console.log("products/delete webhook without product id, nothing to do");
-      return;
-    }
-
     const productId = BigInt(payload.id);
 
     await db.$transaction(async (tx) => {
@@ -207,5 +192,184 @@ export async function handleProductDelete(payload: any, shop: string) {
     });
   } catch (err) {
     console.error("Error deleting product: ", err);
+  }
+}
+
+
+export async function handleCreateCollection(payload: any, shop: string, admin: AdminApiContextWithoutRest) {
+  try {
+    const collectionId = BigInt(payload.id);
+    const handle = payload.handle;
+
+
+    await db.collection.upsert({
+      where: { collectionId },
+      create: {
+        collectionId,
+        handle,
+      },
+      update: {
+        handle,
+      },
+    });
+
+
+    // just in case user create a collection with
+    // products right away
+
+    const graphqlId = `gid://shopify/Collection/${payload.id}`;
+
+    const query = `
+      query GetCollectionProducts($id: ID!) {
+        collection(id: $id) {
+          id
+          handle
+          products(first: 250) {
+            edges {
+              node {
+                id
+                handle
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const res = await admin.graphql(query, {
+      variables: { id: graphqlId },
+    })
+
+
+    const json = await res.json();
+
+    const products =
+      json.data?.collection?.products?.edges?.map((e: any) => e.node) ?? [];
+
+    console.log("products:", products);
+
+    // Sync product relationships
+    await db.collection.update({
+      where: { collectionId },
+      data: {
+        products: {
+          set: [], // remove old links
+          connectOrCreate: products.map((p: any) => ({
+            where: { productId: BigInt(p.id.replace("gid://shopify/Product/", "")) },
+            create: {
+              productId: BigInt(p.id.replace("gid://shopify/Product/", "")),
+              handle: p.handle,
+            },
+          })),
+        },
+      },
+    });
+
+
+    console.log(
+      `collections/create: upserted collection ${collectionId} (handle=${handle}) for shop ${shop}`
+    );
+  } catch (err) {
+    console.error("Error creating collection: ", err);
+  }
+}
+
+
+export async function handleUpdateCollection(payload: any, shop: string, admin: AdminApiContextWithoutRest) {
+  try {
+    const collectionId = BigInt(payload.id);
+
+    const collectionWithProducts = await db.collection.findUnique({
+      where: { collectionId: collectionId },
+      include: {
+        products: true,
+      },
+    });
+
+    console.log("collectionWithProducts: ", collectionWithProducts);
+
+    const handle = payload.handle;
+
+    await db.collection.upsert({
+      where: { collectionId },
+      create: {
+        collectionId,
+        handle,
+      },
+      update: {
+        handle,
+      },
+    });
+
+
+    const graphqlId = `gid://shopify/Collection/${payload.id}`;
+
+    const query = `
+      query GetCollectionProducts($id: ID!) {
+        collection(id: $id) {
+          id
+          handle
+          products(first: 250) {
+            edges {
+              node {
+                id
+                handle
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const res = await admin.graphql(query, {
+      variables: { id: graphqlId },
+    })
+
+
+    const json = await res.json();
+
+    const products =
+      json.data?.collection?.products?.edges?.map((e: any) => e.node) ?? [];
+
+    console.log("products:", products);
+
+    // Sync product relationships
+    await db.collection.update({
+      where: { collectionId },
+      data: {
+        products: {
+          set: [], // remove old links
+          connectOrCreate: products.map((p: any) => ({
+            where: { productId: BigInt(p.id.replace("gid://shopify/Product/", "")) },
+            create: {
+              productId: BigInt(p.id.replace("gid://shopify/Product/", "")),
+              handle: p.handle,
+            },
+          })),
+        },
+      },
+    });
+
+    console.log(
+      `collections/update: upserted collection ${collectionId} (handle=${handle}) for shop ${shop}`
+    );
+  } catch (err) {
+    console.error("Error updating collection: ", err);
+  }
+}
+
+export async function handleDeleteCollection(payload: any, shop: string) {
+  try {
+    const collectionId = BigInt(payload.id);
+
+    const result = await db.collection.deleteMany({
+      where: { collectionId },
+    });
+
+    console.log(
+      `collections/delete: removed ${result.count} collection row(s) for collectionId ${collectionId} in shop ${shop}`
+    );
+  } catch (err) {
+    console.error("Error deleting collection: ", err);
   }
 }
