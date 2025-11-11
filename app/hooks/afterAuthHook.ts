@@ -83,11 +83,9 @@ export async function afterAuthHook({ admin, session }: { admin: AdminApiContext
     );
 
     // trigger a builk operation job
-    const result = await triggerBulkOperation(admin);
-    console.log("Bulk status: ", result.status)
-    setTimeout(() => {
-      bulkOpFinish(admin, result.id, session.shop, session)
-    }, 5000)
+    const bulkOp = await triggerBulkOperation(admin);
+
+    bulkOpFinish(admin, bulkOp.id, session.shop, session)
 
     // set calculationInProgress to true
     updateCalculationInProgress(session, true);
