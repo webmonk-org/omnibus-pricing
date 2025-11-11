@@ -63,7 +63,7 @@ export type Subscription = {
 export type VariantStatus = 'active' | 'archived';
 export type ComplianceStatus = 'compliant' | 'non_compliant' | 'not_on_sale' | 'not_enough_data';
 
-export interface Variant {
+export interface VariantRecord {
   id: string;
   shop: string;
   productId: number;
@@ -83,6 +83,11 @@ export type ComplianceKey =
   | "not_on_sale"
   | "not_enough_data";
 
+
+export interface ProductRecord {
+  productId: number,
+  handle: string,
+}
 
 export interface DiscountContext {
   record: any;

@@ -2,6 +2,7 @@ import type { SessionData } from "@remix-run/node";
 import db from "app/db.server";
 import type { AdminApiContextWithoutRest } from "node_modules/@shopify/shopify-app-remix/dist/ts/server/clients";
 import { processVariants, updateCalculationInProgress } from "./process-variants";
+import type { VariantRecord } from "app/types";
 
 export async function uninstalled(shop: string) {
   await db.session.deleteMany({ where: { shop } });
@@ -57,15 +58,14 @@ export async function bulkOpFinish(admin: AdminApiContextWithoutRest, id: string
   updateCalculationInProgress(session, false);
 }
 
-export async function handleProductCreate(
-  payload: any,
-  shop: string,
-) {
+export async function handleProductCreate(payload: any, shop: string) {
   try {
     if (!payload || !Array.isArray(payload.variants) || payload.variants.length === 0) {
       console.log("product/create webhook with no variants, nothing to do");
       return;
     }
+
+    console.log("Comming payload is : ", payload);
 
     const productId = BigInt(payload.id);
     const productStatus =
@@ -73,31 +73,42 @@ export async function handleProductCreate(
         ? "active"
         : "archived";
 
-    const now = new Date();
-
     const variantsData = payload.variants.map((v: any) => ({
       shop,
       productId,
       variantId: BigInt(v.id),
       status: productStatus,
       complianceStatus: "not_enough_data",
-      createdAt: now,
-      updatedAt: now,
     }));
 
-    await db.variant.createMany({
-      data: variantsData,
-      skipDuplicates: true,
+    await db.$transaction(async (tx) => {
+      // Ensure the product exists first
+      await tx.product.upsert({
+        where: { productId },
+        create: {
+          productId,
+          handle: payload.handle,
+        },
+        update: {
+          handle: payload.handle,
+        },
+      });
+
+      // create the variants pointing at that product
+      await tx.variant.createMany({
+        data: variantsData,
+        skipDuplicates: true,
+      });
     });
 
     console.log(
       `Created ${variantsData.length} variants for product ${productId} in shop ${shop}`
     );
-
   } catch (err) {
-    console.error("Error creating product: ", err)
+    console.error("Error creating product: ", err);
   }
 }
+
 
 export async function handleProductUpdate(payload: any, shop: string) {
   try {
@@ -106,7 +117,6 @@ export async function handleProductUpdate(payload: any, shop: string) {
       return;
     }
 
-    // Use GraphQL product GID (matches what you store in DB)
     const productId = BigInt(payload.id);
 
     const productStatus =
@@ -114,62 +124,59 @@ export async function handleProductUpdate(payload: any, shop: string) {
         ? "active"
         : "archived";
 
-    // Collect variant GIDs from payload
-    const variantIds = payload.variants.map((v: any) => BigInt(v.id));
+    const variantsData = payload.variants.map((v: any) => ({
+      shop,
+      productId,
+      variantId: BigInt(v.id),
+      status: productStatus,
+    }));
 
-    // 1️⃣ Find which variants already exist in DB for this shop + product
-    const existingVariants = await db.variant.findMany({
-      where: {
-        shop,
-        productId,
-        variantId: { in: variantIds },
-      },
-      select: { variantId: true },
+    await db.$transaction(async (tx) => {
+      // ensure product is in sync
+      await tx.product.upsert({
+        where: { productId },
+        create: {
+          productId,
+          handle: payload.handle,
+        },
+        update: {
+          handle: payload.handle,
+        },
+      });
+
+      // epsert each variant
+      await Promise.all(
+        variantsData.map((v: VariantRecord) =>
+          tx.variant.upsert({
+            where: {
+              shop_variantId: {
+                shop: v.shop,
+                variantId: v.variantId,
+              },
+            },
+            create: {
+              shop: v.shop,
+              productId: v.productId,
+              variantId: v.variantId,
+              status: v.status,
+            },
+            update: {
+              productId: v.productId,
+              status: v.status,
+            },
+          })
+        )
+      );
     });
 
-    const existingIds = new Set(existingVariants.map((v) => v.variantId));
-
-    // 2️⃣ Build only the variants that we actually have in DB
-    const variantsToUpdate = payload.variants.filter((v: any) =>
-      existingIds.has(BigInt(v.id).toString())
-    );
-
-    if (variantsToUpdate.length === 0) {
-      console.log(
-        `products/update: no existing variants found in DB for product ${productId} in shop ${shop}`
-      );
-      return;
-    }
-
-    const now = new Date();
-
-    // 3️⃣ Update each existing variant
-    await Promise.all(
-      variantsToUpdate.map((v: any) =>
-        db.variant.update({
-          where: {
-            shop_variantId: {
-              shop,
-              variantId: BigInt(v.id),
-            },
-          },
-          data: {
-            productId,
-            status: productStatus,
-            updatedAt: now,
-            // Todo: omnibus fields
-          },
-        })
-      )
-    );
-
     console.log(
-      `Updated ${variantsToUpdate.length}/${payload.variants.length} variants for product ${productId} in shop ${shop}`
+      `Upserted ${variantsData.length} variants for product ${productId} in shop ${shop} (products/update)`
     );
   } catch (err) {
     console.error("Error Updating products: ", err);
   }
 }
+
 
 export async function handleProductDelete(payload: any, shop: string) {
   try {
@@ -178,28 +185,27 @@ export async function handleProductDelete(payload: any, shop: string) {
       return;
     }
 
-    const productId = String(payload.id);
+    const productId = BigInt(payload.id);
 
-    const result = await db.variant.deleteMany({
-      where: {
-        shop,
-        productId,
-      },
+    await db.$transaction(async (tx) => {
+      // Delete variants for this product + shop
+      const variantsResult = await tx.variant.deleteMany({
+        where: {
+          shop,
+          productId,
+        },
+      });
+
+      //  Optionally delete the product row itself
+      const productResult = await tx.product.deleteMany({
+        where: { productId },
+      });
+
+      console.log(
+        `products/delete: removed ${variantsResult.count} variants and ${productResult.count} product rows for product ${productId} in shop ${shop}`
+      );
     });
-
-    console.log(
-      `products/delete: removed ${result.count} variants for product ${productId} in shop ${shop}`
-    );
   } catch (err) {
     console.error("Error deleting product: ", err);
   }
 }
-
-
-
-
-
-
-
-
-
