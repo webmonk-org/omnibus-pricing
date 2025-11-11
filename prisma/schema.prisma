@@ -125,7 +125,7 @@ model Product {
 
 model Collection {
   id        String   @id @default(cuid())
-  collectionId BigInt
+  collectionId BigInt @unique
   handle    String
   createdAt DateTime @default(now())
   products Product[] // <- implicit m:n
