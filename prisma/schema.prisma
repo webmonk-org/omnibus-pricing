@@ -101,6 +101,7 @@ model Variant {
   variantId BigInt
   product        Product        @relation(fields: [productId], references: [productId])
   status String // "active" | "archived" - tracks if product should be processed
+
   // Omnibus-specific tracking
   complianceStatus         String? // "compliant" | "non_compliant" | "not_on_sale" | "not_enough_data"
   currentDiscountStartedAt DateTime? // When current discount started
@@ -135,6 +136,8 @@ model Collection {
 
 model Discount {
   id        String @id @default(cuid())
+  shop      String
+  discountId    BigInt   @unique
   amount    Int
   type      String
   appliesTo DiscountType
