@@ -1,27 +1,61 @@
-import type { SessionData } from "@remix-run/node";
-import db from "app/db.server";
+// export async function computeVariantDiscountFields({
+//   record,
+//   shop,
+//   variantId,
+// }: DiscountContext) {
+//   const now = new Date();
+//
+//   const price =
+//     record.price != null ? parseFloat(record.price) : null;
+//   const compareAtPrice =
+//     record.compareAtPrice != null ? parseFloat(record.compareAtPrice) : null;
+//
+//   const isDiscounted =
+//     price !== null &&
+//     compareAtPrice !== null &&
+//     compareAtPrice > price;
+//
+//   const existing = await db.variant.findUnique({
+//     where: {
+//       shop_variantId: { shop, variantId },
+//     },
+//   });
+//
+//   let currentDiscountStartedAt: Date | null =
+//     existing?.currentDiscountStartedAt ?? null;
+//   let complianceStatus: string | null = existing?.complianceStatus ?? null;
+//
+//   if (isDiscounted) {
+//     // Newly discounted so start period now
+//     if (!existing?.currentDiscountStartedAt) {
+//       currentDiscountStartedAt = now;
+//     }
+//     // Until we’ve done Omnibus checks
+//     if (!complianceStatus || complianceStatus === "not_on_sale") {
+//       complianceStatus = "not_enough_data";
+//     }
+//   } else {
+//     // No discount so not on sale
+//     currentDiscountStartedAt = null;
+//     complianceStatus = "not_on_sale";
+//   }
+//
+//   return {
+//     lastProcessedAt: now, // not stored yet, but useful if you add a field later
+//     currentDiscountStartedAt,
+//     complianceStatus,
+//   };
+// }
 
-function mapProductStatus(shopifyStatus?: string | null): "active" | "archived" {
-  return shopifyStatus === "ACTIVE" ? "active" : "archived";
-}
+
+
+import db from "app/db.server";
+import { mapProductStatus, toBigIntId } from "./helpers";
+
 
 // productId (numeric) -> status
 const productStatus = new Map<bigint, "active" | "archived">();
 
-function toBigIntId(raw: string | number | bigint | undefined): bigint {
-  if (raw === undefined || raw === null) {
-    throw new Error("toBigIntId received undefined/null");
-  }
-
-  if (typeof raw === "bigint") return raw;
-  if (typeof raw === "number") return BigInt(raw);
-
-  const match = raw.match(/(\d+)$/);
-  if (!match) {
-    throw new Error(`Could not extract numeric ID from value: ${raw}`);
-  }
-  return BigInt(match[1]);
-}
 
 export async function processVariants(url: string, shop: string) {
   console.log("JSONL data parser is running...");
@@ -149,20 +183,3 @@ export async function processVariants(url: string, shop: string) {
   );
 }
 
-
-
-
-
-export async function updateCalculationInProgress(session: SessionData, BoolValue: boolean) {
-  try {
-    await db.session.update({
-      where: { shop: session.shop },
-      data: {
-        calculationInProgress: BoolValue,
-      },
-    });
-  } catch (err) {
-    console.error("Error updating calculationInProgress: ", err)
-  }
-  return;
-}

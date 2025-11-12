@@ -1,7 +1,8 @@
 import type { SessionData } from "@remix-run/node";
 import db from "app/db.server";
 import type { AdminApiContextWithoutRest } from "node_modules/@shopify/shopify-app-remix/dist/ts/server/clients";
-import { processVariants, updateCalculationInProgress } from "./process-variants";
+import { processVariants } from "./process-variants";
+import { updateCalculationInProgress, toBigIntId, fetchAndNormalizeDiscount } from "./helpers"
 import type { VariantRecord } from "app/types";
 
 export async function uninstalled(shop: string) {
@@ -373,3 +374,83 @@ export async function handleDeleteCollection(payload: any, shop: string) {
     console.error("Error deleting collection: ", err);
   }
 }
+
+
+export async function handleDiscountCreateOrUpdate(
+  payload: any,
+  shop: string,
+  admin: AdminApiContextWithoutRest
+) {
+  try {
+
+    console.log("Running  handleDiscountCreateOrUpdate ----");
+
+    const gid = payload.admin_graphql_api_id as string;
+    if (!gid) {
+      console.error("Discount webhook missing admin_graphql_api_id");
+      return;
+    }
+
+    const discountId = toBigIntId(gid);
+    const norm = await fetchAndNormalizeDiscount(admin, gid);
+    console.log("Norm is : ", norm);
+
+    if (!norm) {
+      console.error("Unsupported/empty discount payload for GID", gid);
+      return;
+    }
+
+    console.log("amount is : ", norm.amount);
+    await db.discount.upsert({
+      where: { discountId },
+      create: {
+        shop,
+        discountId,
+        amount: norm.amount,
+        type: norm.type,
+        appliesTo: norm.appliesTo,
+        productIds: norm.productIds,
+        collectionIds: norm.collectionIds,
+      },
+      update: {
+        amount: norm.amount,
+        type: norm.type,
+        appliesTo: norm.appliesTo,
+        productIds: norm.productIds,
+        collectionIds: norm.collectionIds,
+        updatedAt: new Date(),
+      },
+    });
+
+    console.log(
+      `discounts/create|update: ${discountId.toString()} ` +
+      `(type=${norm.type}, amount=${norm.amount}, appliesTo=${norm.appliesTo}, ` +
+      `products=${norm.productIds.length}, collections=${norm.collectionIds.length})`
+    );
+  } catch (err) {
+    console.error("Error handling discount create/update:", err);
+  }
+}
+
+export async function handleDiscountDelete(payload: any, shop: string) {
+  try {
+    const gid = payload.admin_graphql_api_id as string;
+    if (!gid) {
+      console.error("Discount delete webhook missing admin_graphql_api_id");
+      return;
+    }
+
+    const discountId = toBigIntId(gid);
+
+    const result = await db.discount.deleteMany({
+      where: { shop, discountId },
+    });
+
+    console.log(
+      `discounts/delete: removed ${result.count} discount row(s) for discountId ${discountId.toString()} in shop ${shop}`
+    );
+  } catch (err) {
+    console.error("Error deleting discount:", err);
+  }
+}
+

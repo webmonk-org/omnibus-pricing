@@ -96,3 +96,12 @@ export interface DiscountContext {
   productId: BigInt;
   status: "active" | "archived";
 };
+
+
+export type NormalizedTargets = {
+  productIds: string[];     // numeric product IDs as strings
+  collectionIds: string[];  // numeric collection IDs as strings
+  appliesTo: "PRODUCT" | "COLLECTION";
+  type: "percentage" | "fixed_amount";
+  amount: number;           // percentage as int OR fixed amount in minor units
+};
