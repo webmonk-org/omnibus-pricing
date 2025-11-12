@@ -99,9 +99,18 @@ export interface DiscountContext {
 
 
 export type NormalizedTargets = {
-  productIds: string[];     // numeric product IDs as strings
-  collectionIds: string[];  // numeric collection IDs as strings
+  productIds: string[];
+  collectionIds: string[];
   appliesTo: "PRODUCT" | "COLLECTION";
   type: "percentage" | "fixed_amount";
-  amount: number;           // percentage as int OR fixed amount in minor units
+  amount: number;
+};
+
+export type DiscountItem = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  type: string;
 };
