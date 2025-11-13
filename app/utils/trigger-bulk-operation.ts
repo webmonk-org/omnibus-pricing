@@ -43,31 +43,107 @@ export async function triggerBulkOperation(admin: AdminApiContextWithoutRest) {
           }
 
           discountNodes {
-            edges {
-              node {
-                id
-                discount {
-                  __typename
-                  ... on DiscountCodeBasic {
-                    title
-                    summary
-                    status
-                    startsAt
-                    endsAt
+          edges {
+            node {
+              id
+              discount {
+                __typename
+
+                ... on DiscountCodeBasic {
+                  customerGets {
+                    value {
+                      ... on DiscountPercentage {
+                        percentage
+                      }
+                      ... on DiscountAmount {
+                        amount {
+                          amount
+                        }
+                      }
+                    }
+                    items {
+                      ... on AllDiscountItems {
+                        allItems
+                      }
+                      ... on DiscountProducts {
+                        products(first: 250) {
+                          nodes {
+                            id
+                          }
+                        }
+                      }
+                      ... on DiscountCollections {
+                        collections(first: 250) {
+                          nodes {
+                            id
+                          }
+                        }
+                      }
+                    }
                   }
-                  ... on DiscountAutomaticBasic {
-                    title
-                    summary
-                    status
-                    startsAt
-                    endsAt
+                }
+
+                ... on DiscountAutomaticBasic {
+                  customerGets {
+                    value {
+                      ... on DiscountPercentage {
+                        percentage
+                      }
+                      ... on DiscountAmount {
+                        amount {
+                          amount
+                        }
+                      }
+                    }
+                    items {
+                      ... on AllDiscountItems {
+                        allItems
+                      }
+                      ... on DiscountProducts {
+                        products(first: 250) {
+                          nodes {
+                            id
+                          }
+                        }
+                      }
+                      ... on DiscountCollections {
+                        collections(first: 250) {
+                          nodes {
+                            id
+                          }
+                        }
+                      }
+                    }
                   }
-                  ... on DiscountCodeBxgy {
-                    title
-                    summary
-                    status
-                    startsAt
-                    endsAt
+                }
+
+                ... on DiscountCodeBxgy {
+                  customerGets {
+                    value {
+                      # BXGY usually expresses value as a percentage, so we read it if present
+                      ... on DiscountPercentage {
+                        percentage
+                      }
+                    }
+                    items {
+                      ... on AllDiscountItems {
+                        allItems
+                      }
+                      ... on DiscountProducts {
+                        products(first: 250) {
+                          nodes {
+                            id
+                          }
+                        }
+                      }
+                      ... on DiscountCollections {
+                        collections(first: 250) {
+                          nodes {
+                            id
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -91,7 +167,6 @@ export async function triggerBulkOperation(admin: AdminApiContextWithoutRest) {
   const result = await admin.graphql(mutation);
   const { data } = await result.json();
   return await waitForBulkOperationCompletion(admin, data.bulkOperationRunQuery.bulkOperation.id)
-
 }
 
 async function waitForBulkOperationCompletion(admin: AdminApiContextWithoutRest, bulkOpId: string) {

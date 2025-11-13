@@ -3,7 +3,7 @@ import db from '../db.server'
 import type { AdminApiContextWithoutRest } from 'node_modules/@shopify/shopify-app-remix/dist/ts/server/clients';
 import type { Shop } from '@prisma/client';
 import { triggerBulkOperation } from 'app/utils/trigger-bulk-operation';
-import { updateCalculationInProgress } from 'app/utils/process-variants';
+import { triggerCalculationForSelectedProducts, updateCalculationInProgress } from 'app/utils/helpers';
 import { bulkOpFinish } from 'app/utils/webhooks-handler';
 
 async function getShop(admin: AdminApiContextWithoutRest) {
