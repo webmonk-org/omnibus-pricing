@@ -1,9 +1,11 @@
 import type { SessionData } from "@remix-run/node";
 import db from "app/db.server";
 import type { AdminApiContextWithoutRest } from "node_modules/@shopify/shopify-app-remix/dist/ts/server/clients";
-import { processVariants } from "./process-variants";
+import { processBulkData } from "./process-bulk-data";
 import { updateCalculationInProgress, toBigIntId, fetchAndNormalizeDiscount } from "./helpers"
+
 import type { VariantRecord } from "app/types";
+import { triggerCalculationForSelectedProducts } from "./calculate-omnibus-price";
 
 export async function uninstalled(shop: string) {
   await db.session.deleteMany({ where: { shop } });
@@ -53,7 +55,7 @@ export async function bulkOpFinish(admin: AdminApiContextWithoutRest, id: string
   }
 
   // Save the variants in DB
-  processVariants(bulkOp.url, shop)
+  processBulkData(bulkOp.url, shop)
 
   // set calculationInProgress to false
   updateCalculationInProgress(session, false);
@@ -68,6 +70,13 @@ export async function handleProductCreate(payload: any, shop: string) {
       payload.status === "active" || payload.status === "ACTIVE"
         ? "active"
         : "archived";
+
+
+    // calcualte monibus
+    const { currentDiscountStartedAt, complianceStatus } = await triggerCalculationForSelectedProducts(payload, shop)
+
+    console.log("currentDiscountStartedAt: ", currentDiscountStartedAt);
+    console.log("complianceStatus: ", complianceStatus);
 
     const variantsData = payload.variants.map((v: any) => ({
       shop,

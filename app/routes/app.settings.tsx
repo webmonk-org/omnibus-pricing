@@ -81,20 +81,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export async function action({ request }: ActionFunctionArgs) {
-  const payload = await request.json();
+  const { settings } = await request.json();
 
   const { session } = await authenticate.admin(request);
-  const shop = session.shop;
-  console.log("Shop: ", shop);
-  console.log("Data is :", payload);
 
-  await db.session.upsert({
-    where: { shop },
-    update: { settings: payload },
-    create: {
-      shop,
-      settings: payload,
-    },
+  await db.session.update({
+    where: { id: session.id },
+    data: { settings },
   });
 
   return new Response();
@@ -135,7 +128,7 @@ export default function Settings() {
     };
 
     fetcher.submit({
-      data: JSON.stringify(payload),
+      settings: JSON.stringify(payload),
     }, {
       method: "POST",
       encType: "application/json",

@@ -92,7 +92,7 @@ export interface ProductRecord {
 export interface DiscountContext {
   record: any;
   shop: string;
-  variantId: BigInt;
+  // variantId: BigInt;
   productId: BigInt;
   status: "active" | "archived";
 };
