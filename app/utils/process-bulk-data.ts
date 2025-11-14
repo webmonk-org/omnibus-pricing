@@ -207,6 +207,8 @@ export async function processBulkData(url: string, shop: string) {
       ) {
         const discountNumericId = toBigIntId(record.__parentId);
 
+        const productIdStr = toBigIntId(record.id).toString();
+
         const existing = await db.discount.findUnique({
           where: { discountId: discountNumericId },
         });
@@ -220,14 +222,14 @@ export async function processBulkData(url: string, shop: string) {
               amount: 0,
               type: "UNKNOWN",
               appliesTo: "PRODUCT",
-              productIds: [record.id],
+              productIds: [productIdStr],
               collectionIds: [],
             },
           });
         } else {
-          const productIds = existing.productIds.includes(record.id)
+          const productIds = existing.productIds.includes(productIdStr)
             ? existing.productIds
-            : [...existing.productIds, record.id];
+            : [...existing.productIds, productIdStr];
 
           await db.discount.update({
             where: { discountId: discountNumericId },
