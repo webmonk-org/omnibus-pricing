@@ -157,6 +157,14 @@ enum DiscountType {
 
 model PriceHistory {
   id        String @id @default(cuid())
+
+  date                        DateTime
+  market                      String
+  price                       Decimal   @db.Decimal(10, 2)
+  compareAtPrice              Decimal   @db.Decimal(10, 2)
+  priceWithDiscounts          Decimal?  @db.Decimal(10, 2)
+  compareAtPriceWithDiscounts Decimal?  @db.Decimal(10, 2)
+
   variantId String
   // related prices field needed for omnibus calculations
   variant Variant @relation(fields: [variantId], references: [id])
