@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs } from '@remix-run/node';
 import { authenticate } from 'app/shopify.server';
-import { bulkOpFinish, handleCreateCollection, handleDeleteCollection, handleProductCreate, handleProductDelete, handleProductUpdate, handleUpdateCollection, scopesUpdate, uninstalled } from 'app/utils/webhooks-handler';
+import { bulkOpFinish, handleCreateCollection, handleCreateDiscount, handleDeleteCollection, handleDeleteDiscount, handleDiscountCreateOrUpdate, handleDiscountDelete, handleProductCreate, handleProductDelete, handleProductUpdate, handleUpdateCollection, handleUpdateDiscount, scopesUpdate, uninstalled } from 'app/utils/webhooks-handler';
 
 const webhookIdsStore = new Set<string>();
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -14,7 +14,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       webhookIdsStore.add(webhookId);
     }
 
-    if (!payload || !payload.id) {
+    if (!payload) {
       console.log("Missing payload!");
       return;
     }
@@ -70,18 +70,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         handleUpdateCollection(payload, shop, admin)
         break;
       case 'COLLECTIONS_DELETE':
-        console.log("delete collections");
         handleDeleteCollection(payload, shop)
         break;
       // discount related
       case 'DISCOUNTS_CREATE':
-        console.log("create discounts");
-        break;
       case 'DISCOUNTS_UPDATE':
-        console.log("update discounts");
+        console.log("update/create discounts running----");
+        handleDiscountCreateOrUpdate(payload, shop, admin)
         break;
       case 'DISCOUNTS_DELETE':
-        console.log("delete discounts");
+        handleDiscountDelete(payload, shop)
         break;
       default:
         throw new Error('Unhandled webhook topic: ' + topic);

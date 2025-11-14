@@ -1,5 +1,6 @@
+import type { SessionData } from '@remix-run/node';
 import db from 'app/db.server'
-import type { NormalizedTargets } from 'app/types';
+import type { DiscountContext, DiscountItem, NormalizedTargets } from 'app/types';
 import type { AdminApiContextWithoutRest } from 'node_modules/@shopify/shopify-app-remix/dist/ts/server/clients';
 
 export function toBigIntId(raw: string | number | bigint | undefined): bigint {
@@ -49,6 +50,19 @@ export async function getActiveDiscountsForProduct(
   });
 }
 
+export function mapDiscountType(raw?: string | null): string {
+  switch (raw) {
+    case "DiscountCodeBasic":
+      return "code_basic";
+    case "DiscountAutomaticBasic":
+      return "automatic_basic";
+    case "DiscountCodeBxgy":
+      return "code_bxgy";
+    default:
+      return raw ?? "unknown";
+  }
+}
+
 export async function updateCalculationInProgress(session: SessionData, BoolValue: boolean) {
   try {
     await db.session.update({
@@ -62,10 +76,6 @@ export async function updateCalculationInProgress(session: SessionData, BoolValu
   }
   return;
 }
-
-
-
-
 
 
 
@@ -236,4 +246,3 @@ export async function fetchAndNormalizeDiscount(
     amount,
   };
 }
-

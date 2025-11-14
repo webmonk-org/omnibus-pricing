@@ -2,79 +2,73 @@ import type { AdminApiContextWithoutRest } from "node_modules/@shopify/shopify-a
 
 export async function triggerBulkOperation(admin: AdminApiContextWithoutRest) {
   const mutation = `
-    mutation {
-      bulkOperationRunQuery(
-        query: """
-        {
-          products {
-            edges {
-              node {
-                id
-                handle
+mutation {
+  bulkOperationRunQuery(
+    query: """
+    {
+      products(first: 250) {
+        edges {
+          node {
+            id
+            handle
+            status
+            variants(first: 250) {
+              edges {
+                node {
+                  id
+                  title
+                  price
+                  compareAtPrice
+                  inventoryQuantity
+                }
+              }
+            }
+          }
+        }
+      }
+
+      discountNodes(first: 250) {
+        edges {
+          node {
+            id
+            discount {
+              __typename
+
+              # Only the types you care about
+              ... on DiscountCodeBasic {
+                title
+                summary
                 status
-                variants {
-                  edges {
-                    node {
-                      id
-                      title
-                      price
-                      compareAtPrice
-                      inventoryQuantity
+                startsAt
+                endsAt
+                customerGets {
+                  value {
+                    ... on DiscountPercentage {
+                      percentage
+                    }
+                    ... on DiscountAmount {
+                      amount {
+                        amount
+                      }
                     }
                   }
-                }
-              }
-            }
-          }
-          collections {
-            edges {
-              node {
-                id
-                handle
-                products {
-                  edges {
-                    node {
-                      id
+                  items {
+                    ... on AllDiscountItems {
+                      allItems
                     }
-                  }
-                }
-              }
-            }
-          }
-
-          discountNodes {
-          edges {
-            node {
-              id
-              discount {
-                __typename
-
-                ... on DiscountCodeBasic {
-                  customerGets {
-                    value {
-                      ... on DiscountPercentage {
-                        percentage
-                      }
-                      ... on DiscountAmount {
-                        amount {
-                          amount
-                        }
-                      }
-                    }
-                    items {
-                      ... on AllDiscountItems {
-                        allItems
-                      }
-                      ... on DiscountProducts {
-                        products(first: 250) {
-                          nodes {
+                    ... on DiscountProducts {
+                      products(first: 250) {
+                        edges {
+                          node {
                             id
                           }
                         }
                       }
-                      ... on DiscountCollections {
-                        collections(first: 250) {
-                          nodes {
+                    }
+                    ... on DiscountCollections {
+                      collections(first: 250) {
+                        edges {
+                          node {
                             id
                           }
                         }
@@ -82,63 +76,42 @@ export async function triggerBulkOperation(admin: AdminApiContextWithoutRest) {
                     }
                   }
                 }
+              }
 
-                ... on DiscountAutomaticBasic {
-                  customerGets {
-                    value {
-                      ... on DiscountPercentage {
-                        percentage
-                      }
-                      ... on DiscountAmount {
-                        amount {
-                          amount
-                        }
-                      }
+              ... on DiscountAutomaticBasic {
+                title
+                summary
+                status
+                startsAt
+                endsAt
+                customerGets {
+                  value {
+                    ... on DiscountPercentage {
+                      percentage
                     }
-                    items {
-                      ... on AllDiscountItems {
-                        allItems
-                      }
-                      ... on DiscountProducts {
-                        products(first: 250) {
-                          nodes {
-                            id
-                          }
-                        }
-                      }
-                      ... on DiscountCollections {
-                        collections(first: 250) {
-                          nodes {
-                            id
-                          }
-                        }
+                    ... on DiscountAmount {
+                      amount {
+                        amount
                       }
                     }
                   }
-                }
-
-                ... on DiscountCodeBxgy {
-                  customerGets {
-                    value {
-                      # BXGY usually expresses value as a percentage, so we read it if present
-                      ... on DiscountPercentage {
-                        percentage
-                      }
+                  items {
+                    ... on AllDiscountItems {
+                      allItems
                     }
-                    items {
-                      ... on AllDiscountItems {
-                        allItems
-                      }
-                      ... on DiscountProducts {
-                        products(first: 250) {
-                          nodes {
+                    ... on DiscountProducts {
+                      products(first: 250) {
+                        edges {
+                          node {
                             id
                           }
                         }
                       }
-                      ... on DiscountCollections {
-                        collections(first: 250) {
-                          nodes {
+                    }
+                    ... on DiscountCollections {
+                      collections(first: 250) {
+                        edges {
+                          node {
                             id
                           }
                         }
@@ -149,20 +122,22 @@ export async function triggerBulkOperation(admin: AdminApiContextWithoutRest) {
               }
             }
           }
-        }
-        """
-      ) {
-        bulkOperation {
-          id
-          status
-        }
-        userErrors {
-          field
-          message
         }
       }
     }
-  `
+    """
+  ) {
+    bulkOperation {
+      id
+      status
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+`
 
   const result = await admin.graphql(mutation);
   const { data } = await result.json();

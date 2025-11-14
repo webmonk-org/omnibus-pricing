@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { useFetcher, useLoaderData } from "@remix-run/react";
+import { useLoaderData } from "@remix-run/react";
 import {
   Page,
   Layout,
@@ -74,7 +74,9 @@ export default function Index() {
   const { calculationInProgress, complianceStats } = useLoaderData<typeof loader>();
   // const fetcher = useFetcher();
 
-  const summaryFetcher = useFetcher()
+  // const summaryFetcher = useFetcher()
+
+
   const [dispayBanner, setDisplayBanner] = useState(true);
   const [active, setActive] = useState(false)
   const [hovered, setHovered] = useState(false)
@@ -82,8 +84,8 @@ export default function Index() {
 
   const handleChange = useCallback(() => setActive(!active), [active]);
 
-  const laodingSummary = ["loading", "submitting"].includes(summaryFetcher.state) &&
-    summaryFetcher.formMethod === "GET";
+  // const laodingSummary = ["loading", "submitting"].includes(summaryFetcher.state) &&
+  //   summaryFetcher.formMethod === "GET";
 
   // const refreshing =
   //   ["loading", "submitting"].includes(fetcher.state) &&
@@ -129,26 +131,6 @@ export default function Index() {
     <Icon source={QuestionCircleIcon} tone={hovered ? "base" : "subdued"} />
   </div>)
 
-  // {
-  //   "id": "offline_omnibus-pricing.myshopify.com",
-  //   "shop": "omnibus-pricing.myshopify.com",
-  //   "state": "",
-  //   "isOnline": false,
-  //   "scope": "write_products",
-  //   "expires": null,
-  //   "accessToken": "shpua_e7bae77ae270e7222ad5447a141b56b8",
-  //   "userId": null,
-  //   "firstName": null,
-  //   "lastName": null,
-  //   "email": null,
-  //   "accountOwner": false,
-  //   "locale": null,
-  //   "calculationInProgress": false,
-  //   "collaborator": false,
-  //   "emailVerified": false,
-  //   "settings": null,
-  //   "uninstallDate": null
-  // }
   return (
     <Page>
       <TitleBar title="Omnibus Pricing" />
