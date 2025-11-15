@@ -114,3 +114,33 @@ export type DiscountItem = {
   endsAt?: string | null;
   type: string;
 };
+
+
+export type OmnibusPriceHistoryPoint = {
+  date: string;
+  price: string;
+  compareAtPrice?: string | null;
+  hasDiscount: boolean;
+};
+
+export type OmnibusSummaryMetafield = {
+  timeframeDays: number;
+  campaignLengthDays: number;
+  currentPrice: string;
+  currentCurrency: string;
+  lowestPrice: string | null;
+  lowestPriceDate: string | null;
+  compareAtPrice: string | null;
+  complianceStatus:
+  | "compliant"
+  | "non_compliant"
+  | "not_on_sale"
+  | "not_enough_data";
+  reason?: string;
+  lastCalculatedAt: string;
+};
+
+export type OmnibusPriceHistoryMetafield = {
+  currency: string;       // "EUR"
+  points: OmnibusPriceHistoryPoint[];
+};

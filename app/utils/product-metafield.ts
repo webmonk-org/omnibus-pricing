@@ -1,3 +1,4 @@
+import type { OmnibusPriceHistoryMetafield, OmnibusSummaryMetafield } from "app/types";
 import type { AdminApiContextWithoutRest } from "node_modules/@shopify/shopify-app-remix/dist/ts/server/clients";
 
 const OMNIBUS_NAMESPACE = "omnibus_pricing";
@@ -78,3 +79,68 @@ export async function createProductMetafieldDefinitions(
     }
   }
 }
+
+
+
+
+export async function setOmnibusMetafieldsForProduct(opts: {
+  admin: AdminApiContextWithoutRest;
+  productGid: string;
+  summary: OmnibusSummaryMetafield;
+  history: OmnibusPriceHistoryMetafield;
+}) {
+  const { admin, productGid, summary, history } = opts;
+
+  const mutation = `
+    mutation SetOmnibusMetafields($metafields: [MetafieldsSetInput!]!) {
+      metafieldsSet(metafields: $metafields) {
+        metafields {
+          id
+          key
+          namespace
+          owner {
+            ... on Product { id }
+          }
+        }
+        userErrors {
+          field
+          message
+          code
+        }
+      }
+    }
+  `;
+
+  const variables = {
+    metafields: [
+      {
+        ownerId: productGid,
+        namespace: OMNIBUS_NAMESPACE,
+        key: "summary",
+        type: "json",
+        value: JSON.stringify(summary),
+      },
+      {
+        ownerId: productGid,
+        namespace: OMNIBUS_NAMESPACE,
+        key: "price_history",
+        type: "json",
+        value: JSON.stringify(history),
+      },
+    ],
+  };
+
+  const res = await admin.graphql(mutation, { variables });
+  const json = await res.json();
+
+  const errors = json.data?.metafieldsSet?.userErrors;
+  if (errors?.length) {
+    console.error(
+      "Failed to set omnibus metafields for product",
+      productGid,
+      errors
+    );
+  }
+}
+
+
