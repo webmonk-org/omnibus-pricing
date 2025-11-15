@@ -5,6 +5,7 @@ import type { Shop } from '@prisma/client';
 import { triggerBulkOperation } from 'app/utils/trigger-bulk-operation';
 import { triggerCalculationForSelectedProducts, updateCalculationInProgress } from 'app/utils/helpers';
 import { bulkOpFinish } from 'app/utils/webhooks-handler';
+import { createProductMetafieldDefinitions } from 'app/utils/product-metafield';
 
 async function getShop(admin: AdminApiContextWithoutRest) {
   const query = `
@@ -86,6 +87,9 @@ export async function afterAuthHook({ admin, session }: { admin: AdminApiContext
     const bulkOp = await triggerBulkOperation(admin);
 
     bulkOpFinish(admin, bulkOp.id, session.shop, session)
+
+    // create metafield definition for product
+    createProductMetafieldDefinitions(admin);
 
     // set calculationInProgress to true
     updateCalculationInProgress(session, true);
