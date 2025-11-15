@@ -1,11 +1,8 @@
 import db from "app/db.server";
-import { mapProductStatus, toBigIntId } from "./helpers";
+import { toBigIntId } from "./helpers";
 import { triggerCalculationForSelectedProducts } from "./calculate-omnibus-price";
 import { Prisma } from "@prisma/client";
 import type { AdminApiContextWithoutRest } from "node_modules/@shopify/shopify-app-remix/dist/ts/server/clients";
-
-// productId (numeric) -> status
-const productStatus = new Map<bigint, "active" | "archived">();
 
 
 export async function processBulkData(url: string, shop: string) {
@@ -13,7 +10,6 @@ export async function processBulkData(url: string, shop: string) {
 
   console.log("JSONL url is :", url);
 
-  productStatus.clear();
 
   const res = await fetch(url);
   if (!res.ok || !res.body) {
@@ -59,15 +55,16 @@ export async function processBulkData(url: string, shop: string) {
           where: { productId: productNumericId },
           create: {
             productId: productNumericId,
+            status: record.status,
             handle: record.handle,
           },
           update: {
             handle: record.handle,
+            status: record.status
             // keep handle in sync
           },
         });
 
-        productStatus.set(productNumericId, mapProductStatus(record.status));
       }
 
 
@@ -75,7 +72,7 @@ export async function processBulkData(url: string, shop: string) {
       let currentDiscountStartedAt: Date | null = null;
       let complianceStatus: string | null = null;
       if (record.id.includes("ProductVariant")) {
-        const calc = await triggerCalculationForSelectedProducts(record, "BULK_VARIANTS", shop);
+        const calc = await triggerCalculationForSelectedProducts(record, shop);
         currentDiscountStartedAt = calc.currentDiscountStartedAt;
         complianceStatus = calc.complianceStatus;
       }
@@ -86,7 +83,6 @@ export async function processBulkData(url: string, shop: string) {
       if (record.id.includes("ProductVariant")) {
         const variantNumericId = toBigIntId(record.id);           // 46992514646265n
         const parentProductId = toBigIntId(record.__parentId);   // 9008472228089n
-        const status = productStatus.get(parentProductId) ?? "archived";
 
         const variant = await db.variant.upsert({
           where: { shop_variantId: { shop, variantId: variantNumericId } }, // @@unique([shop, variantId])
@@ -94,12 +90,10 @@ export async function processBulkData(url: string, shop: string) {
             shop,
             productId: parentProductId,
             variantId: variantNumericId,
-            status,
             complianceStatus,
             currentDiscountStartedAt
           },
           update: {
-            status,
             complianceStatus,
             currentDiscountStartedAt
           },
@@ -281,6 +275,25 @@ export async function processBulkData(url: string, shop: string) {
       }
 
       // PRODUCT ↔ COLLECTION join rows
+      // if (
+      //   record.id.includes("Product") &&
+      //   record.__parentId?.includes("Collection") &&
+      //   !record.handle // join rows have no handle/status
+      // ) {
+      //   const productNumericId = toBigIntId(record.id); // product
+      //   const collectionNumericId = toBigIntId(record.__parentId); // collection
+      //
+      //   await db.product.update({
+      //     where: { productId: productNumericId },
+      //     data: {
+      //       collections: {
+      //         connect: { collectionId: collectionNumericId },
+      //       },
+      //     },
+      //   });
+      // }
+
+      // PRODUCT ↔ COLLECTION join rows
       if (
         record.id.includes("Product") &&
         record.__parentId?.includes("Collection") &&
@@ -289,11 +302,23 @@ export async function processBulkData(url: string, shop: string) {
         const productNumericId = toBigIntId(record.id); // product
         const collectionNumericId = toBigIntId(record.__parentId); // collection
 
-        await db.product.update({
+        // Only connect if the product already exists
+        const existingProduct = await db.product.findUnique({
           where: { productId: productNumericId },
+          select: { productId: true },
+        });
+
+        if (!existingProduct) {
+          // Product might not be imported yet – skip this join
+          // console.log("Skipping join, product not found:", productNumericId.toString());
+          continue;
+        }
+
+        await db.collection.update({
+          where: { collectionId: collectionNumericId },
           data: {
-            collections: {
-              connect: { collectionId: collectionNumericId },
+            products: {
+              connect: { productId: existingProduct.productId },
             },
           },
         });
@@ -307,7 +332,7 @@ export async function processBulkData(url: string, shop: string) {
 }
 
 
-export async function fetchCollection(admin: AdminApiContextWithoutRest, shop: string) {
+export async function fetchCollection(admin: AdminApiContextWithoutRest) {
   const COLLECTIONS_QUERY = `
   query CollectionsForOmnibus($cursor: String) {
     collections(first: 250, after: $cursor) {
@@ -363,13 +388,40 @@ export async function fetchCollection(admin: AdminApiContextWithoutRest, shop: s
       });
 
       // connect products to this collection
+      // for (const prodEdge of node.products.edges as any[]) {
+      //   const productGid = prodEdge.node.id as string;
+      //   const productNumericId = toBigIntId(productGid);
+      //
+      //   // if the product exists, connect it to the collection
+      //   await db.product.update({
+      //     where: { productId: productNumericId },
+      //     data: {
+      //       collections: {
+      //         connect: { collectionId: collectionNumericId },
+      //       },
+      //     },
+      //   });
+      // }
+
+      // connect products to this collection
       for (const prodEdge of node.products.edges as any[]) {
         const productGid = prodEdge.node.id as string;
         const productNumericId = toBigIntId(productGid);
 
-        // if the product exists, connect it to the collection
-        await db.product.update({
+        // Check if product exists first
+        const existingProduct = await db.product.findUnique({
           where: { productId: productNumericId },
+          select: { productId: true },
+        });
+
+        if (!existingProduct) {
+          // Product wasn’t imported yet -> skip
+          // console.log("Skipping collection join, product not in DB:", productNumericId.toString());
+          continue;
+        }
+
+        await db.product.update({
+          where: { productId: existingProduct.productId },
           data: {
             collections: {
               connect: { collectionId: collectionNumericId },
@@ -377,6 +429,7 @@ export async function fetchCollection(admin: AdminApiContextWithoutRest, shop: s
           },
         });
       }
+
 
       cursor = edge.cursor;
     }
