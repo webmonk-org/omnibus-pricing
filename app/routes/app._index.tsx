@@ -23,23 +23,48 @@ import ProductStatus from "app/components/product-status";
 import { ReviewBanner } from "app/components/review-banner";
 import { QuestionCircleIcon } from "@shopify/polaris-icons";
 import db from "app/db.server"
-import type { ComplianceKey } from "app/types";
+import type { ComplianceKey, Settings } from "app/types";
 
+
+const DEFAULT_SETTINGS: Settings = {
+  timeframe: 30,
+  campaignLength: 60,
+  discounts: "include",
+  selectedDiscountIds: [],
+};
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+
+
 
   const dbSession = await db.session.findFirst({
     where: { shop: session.shop },
     select: {
       calculationInProgress: true,
+      settings: true,
     }
   });
+
+  let settings = (dbSession?.settings ?? null) as Settings | null
+
+  // Set default settings
+  if (!dbSession?.settings) {
+    settings = DEFAULT_SETTINGS;
+    await db.session.update({
+      where: {
+        id: session.id,
+      },
+      data: {
+        settings
+      }
+    })
+  }
+
 
   const statsRaw = await db.variant.groupBy({
     where: {
       shop: session.shop,
-      status: "active", // optional: only active variants
     },
     by: ["complianceStatus"],
     _count: {

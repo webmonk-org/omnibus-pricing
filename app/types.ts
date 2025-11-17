@@ -144,3 +144,10 @@ export type OmnibusPriceHistoryMetafield = {
   currency: string;       // "EUR"
   points: OmnibusPriceHistoryPoint[];
 };
+
+export type Settings = {
+  timeframe: number;
+  campaignLength: number;
+  discounts: "include" | "exclude";
+  selectedDiscountIds: string[];
+};
