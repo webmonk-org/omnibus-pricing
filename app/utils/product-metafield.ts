@@ -1,7 +1,7 @@
 import type { OmnibusPriceHistoryMetafield, OmnibusSummaryMetafield } from "app/types";
 import type { AdminApiContextWithoutRest } from "node_modules/@shopify/shopify-app-remix/dist/ts/server/clients";
 
-const OMNIBUS_NAMESPACE = "omnibus_pricing";
+const OMNIBUS_NAMESPACE = "$app:omnibus";
 
 const productMetafieldDefinitions = [
   {
@@ -46,7 +46,11 @@ export async function createProductMetafieldDefinitions(
         key: def.key,
         description: def.description,
         type: def.type,
-        ownerType: "PRODUCT",
+        ownerType: "PRODUCTVARIANT",
+        access: {
+          admin: "MERCHANT_READ_WRITE",
+          storefront: "PUBLIC_READ",
+        },
       },
     };
 
@@ -79,8 +83,6 @@ export async function createProductMetafieldDefinitions(
     }
   }
 }
-
-
 
 
 export async function setOmnibusMetafieldsForProduct(opts: {
@@ -142,5 +144,3 @@ export async function setOmnibusMetafieldsForProduct(opts: {
     );
   }
 }
-
-
