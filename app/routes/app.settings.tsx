@@ -8,6 +8,7 @@ import {
   RadioButton,
   Button,
   InlineStack,
+  Checkbox,
 } from "@shopify/polaris";
 import { useState, useCallback } from 'react';
 import { TitleBar } from "@shopify/app-bridge-react";
@@ -102,6 +103,7 @@ export default function Settings() {
   const [compaignLength, setCompaignLength] = useState("60")
   const [discounts, setDiscounts] = useState("include")
   const [selectedDiscountIds, setSelectedDiscountIds] = useState<string[]>([]);
+  const [checked, setChecked] = useState(false);
 
   const handlePriceTimeFrameChange = useCallback((value: string) => {
     setPriceTimeFrame(value)
@@ -119,13 +121,21 @@ export default function Settings() {
     [],
   );
 
+  const handleCheckboxChange = useCallback(
+    (newChecked: boolean) => setChecked(newChecked),
+    [],
+  );
+
   const submitSettings = () => {
     const payload = {
       timeframe: Number(priceTimeFrame),
       campaignLength: Number(compaignLength),
       discounts,
-      selectedDiscountIds
+      selectedDiscountIds,
+      multiCurrency: checked
     };
+
+    console.log("Payload is :", payload);
 
     fetcher.submit({
       settings: JSON.stringify(payload),
@@ -140,7 +150,7 @@ export default function Settings() {
 
   return (
     <Page>
-      <TitleBar title="Additional page" />
+      <TitleBar title="Settings Page" />
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">
@@ -174,6 +184,10 @@ export default function Settings() {
                     </span>
                   }
                 />
+                <BlockStack>
+                  <Text as="h2" variant="headingMd">Enable Market Multi-Currency</Text>
+                  <Checkbox label="enableMultiCurrency" checked={checked} onChange={handleCheckboxChange} />
+                </BlockStack>
               </BlockStack>
             </Card>
             <Card>
