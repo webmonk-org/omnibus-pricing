@@ -48,7 +48,7 @@
     "@shopify/api-codegen-preset": "^1.2.0",
     "@shopify/cli": "^3.87.2",
     "@types/eslint": "^9.6.1",
-    "@types/node": "^22.19.1",
+    "@types/node": "^24.10.0",
     "@types/react": "^18.3.26",
     "@types/react-dom": "^18.3.7",
     "eslint": "^8.57.1",
