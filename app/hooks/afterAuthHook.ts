@@ -3,8 +3,7 @@ import db from '../db.server'
 import type { AdminApiContextWithoutRest } from 'node_modules/@shopify/shopify-app-remix/dist/ts/server/clients';
 import type { Shop } from '@prisma/client';
 import { triggerBulkOperation } from 'app/utils/trigger-bulk-operation';
-import { triggerCalculationForSelectedProducts, updateCalculationInProgress } from 'app/utils/helpers';
-import { bulkOpFinish } from 'app/utils/webhooks-handler';
+import { updateCalculationInProgress } from 'app/utils/helpers';
 import { createProductMetafieldDefinitions } from 'app/utils/product-metafield';
 
 async function getShop(admin: AdminApiContextWithoutRest) {
@@ -83,10 +82,9 @@ export async function afterAuthHook({ admin, session }: { admin: AdminApiContext
       { data: shopObject }
     );
 
-    // trigger a builk operation job
-    const bulkOp = await triggerBulkOperation(admin);
-
-    bulkOpFinish(admin, bulkOp.id, session.shop, session)
+    // trigger a bulk operation job
+    const status = await triggerBulkOperation(admin);
+    console.log("Status: ", status);
 
     // create metafield definition for product
     createProductMetafieldDefinitions(admin);
