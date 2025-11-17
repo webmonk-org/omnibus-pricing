@@ -17,6 +17,7 @@ api_version = "2026-01"
     "app_subscriptions/update",
     "app/scopes_update",
     "app/uninstalled",
+    "bulk_operations/finish",
     "shop/update",
     "products/create",
     "products/update",

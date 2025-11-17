@@ -171,6 +171,6 @@ async function waitForBulkOperationCompletion(admin: AdminApiContextWithoutRest,
     if (op.status === "COMPLETED") return op;
     if (op.status === "FAILED" || op.errorCode) throw new Error(`Bulk op failed: ${op.errorCode}`);
 
-    await new Promise((resolve) => setTimeout(resolve, 2000)); // wait 2s and poll again
+    await new Promise((resolve) => setTimeout(resolve, 5000)); // wait 2s and poll again
   }
 }
