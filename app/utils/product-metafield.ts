@@ -85,13 +85,13 @@ export async function createProductMetafieldDefinitions(
 }
 
 
-export async function setOmnibusMetafieldsForProduct(opts: {
+export async function setOmnibusMetafieldsForVariant(opts: {
   admin: AdminApiContextWithoutRest;
-  productGid: string;
+  variantGid: string;
   summary: OmnibusSummaryMetafield;
   history: OmnibusPriceHistoryMetafield;
 }) {
-  const { admin, productGid, summary, history } = opts;
+  const { admin, variantGid, summary, history } = opts;
 
   const mutation = `
     mutation SetOmnibusMetafields($metafields: [MetafieldsSetInput!]!) {
@@ -101,7 +101,7 @@ export async function setOmnibusMetafieldsForProduct(opts: {
           key
           namespace
           owner {
-            ... on Product { id }
+            ... on ProductVariant { id }
           }
         }
         userErrors {
@@ -116,14 +116,14 @@ export async function setOmnibusMetafieldsForProduct(opts: {
   const variables = {
     metafields: [
       {
-        ownerId: productGid,
+        ownerId: variantGid,
         namespace: OMNIBUS_NAMESPACE,
         key: "summary",
         type: "json",
         value: JSON.stringify(summary),
       },
       {
-        ownerId: productGid,
+        ownerId: variantGid,
         namespace: OMNIBUS_NAMESPACE,
         key: "price_history",
         type: "json",
@@ -138,9 +138,9 @@ export async function setOmnibusMetafieldsForProduct(opts: {
   const errors = json.data?.metafieldsSet?.userErrors;
   if (errors?.length) {
     console.error(
-      "Failed to set omnibus metafields for product",
-      productGid,
-      errors
+      "Failed to set omnibus metafields for variant",
+      variantGid,
+      errors,
     );
   }
 }
