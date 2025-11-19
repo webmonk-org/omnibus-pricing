@@ -1,21 +1,39 @@
 import db from "app/db.server";
-import { toBigIntId } from "./helpers";
+import { getOmnibusSettings, toBigIntId } from "./helpers";
 import { triggerCalculationForSelectedProducts } from "./calculate-omnibus-price";
 import { Prisma } from "@prisma/client";
 import type { AdminApiContextWithoutRest } from "node_modules/@shopify/shopify-app-remix/dist/ts/server/clients";
+import { setOmnibusMetafieldsForVariant } from "./product-metafield";
+import type {
+  OmnibusPriceHistoryMetafield,
+  OmnibusSummaryMetafield,
+} from "app/types";
 
-
-export async function processBulkData(url: string, shop: string) {
+export async function processBulkData(
+  url: string,
+  shop: string,
+  admin: AdminApiContextWithoutRest
+) {
   console.log("JSONL data parser is running...");
-
-  console.log("JSONL url is :", url);
-
 
   const res = await fetch(url);
   if (!res.ok || !res.body) {
     console.error("Failed to download JSONL", res.status);
     return;
   }
+
+  const settings = await getOmnibusSettings(shop);
+  console.log("Settings (process-bulk): ", settings);
+
+  // Default market only for now.
+  const shopData = await db.shop.findUnique({
+    where: { shop },
+    select: { currencyCode: true },
+  });
+
+  const defaultMarket = shopData?.currencyCode ?? "USD";
+
+  console.log("Default market is : ", defaultMarket);
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -45,11 +63,13 @@ export async function processBulkData(url: string, shop: string) {
         continue;
       }
 
-      // console.log("Record is :", record);
-
-      // product
-      if (record.id.includes("Product") && record.handle && record.status) {
-        const productNumericId = toBigIntId(record.id); // extract 9008472228089n
+      // PRODUCT LINES
+      if (
+        typeof record.id === "string" &&
+        record.id.includes("gid://shopify/Product/") &&
+        record.status
+      ) {
+        const productNumericId = toBigIntId(record.id);
 
         await db.product.upsert({
           where: { productId: productNumericId },
@@ -59,57 +79,47 @@ export async function processBulkData(url: string, shop: string) {
             handle: record.handle,
           },
           update: {
+            status: record.status,
             handle: record.handle,
-            status: record.status
-            // keep handle in sync
           },
         });
 
+        continue;
       }
 
+      // VARIANT LINES
+      if (
+        typeof record.id === "string" &&
+        record.id.includes("gid://shopify/ProductVariant/")
+      ) {
+        const variantNumericId = toBigIntId(record.id);
+        const parentProductId = toBigIntId(record.__parentId);
 
-      // Only run omnibus calc for variants
-      let currentDiscountStartedAt: Date | null = null;
-      let complianceStatus: string | null = null;
-      if (record.id.includes("ProductVariant")) {
-        const calc = await triggerCalculationForSelectedProducts(record, shop);
-        currentDiscountStartedAt = calc.currentDiscountStartedAt;
-        complianceStatus = calc.complianceStatus;
-      }
-
-      // const { currentDiscountStartedAt, complianceStatus } = await triggerCalculationForSelectedProducts(record, shop);
-
-      // variant
-      if (record.id.includes("ProductVariant")) {
-        const variantNumericId = toBigIntId(record.id);           // 46992514646265n
-        const parentProductId = toBigIntId(record.__parentId);   // 9008472228089n
-
+        // 1) Upsert variant row
         const variant = await db.variant.upsert({
-          where: { shop_variantId: { shop, variantId: variantNumericId } }, // @@unique([shop, variantId])
+          where: { shop_variantId: { shop, variantId: variantNumericId } },
           create: {
             shop,
             productId: parentProductId,
             variantId: variantNumericId,
-            complianceStatus,
-            currentDiscountStartedAt
           },
-          update: {
-            complianceStatus,
-            currentDiscountStartedAt
-          },
+          update: {},
         });
 
-
+        // 2) Store ONE price history row (default market only)
         const priceStr = record.price ?? "0";
         const compareAtStr =
-          record.compareAtPrice != null ? record.compareAtPrice : record.price ?? "0";
+          record.compareAtPrice != null
+            ? record.compareAtPrice
+            : record.price ?? "0";
 
-        // Right now we just store raw prices; you can plug discounts later.
         await db.priceHistory.create({
           data: {
-            variantId: variant.id,
+            variant: {
+              connect: { id: variant.id },
+            },
             date: new Date(),
-            market: shop,
+            market: defaultMarket,
             price: new Prisma.Decimal(priceStr),
             compareAtPrice: new Prisma.Decimal(compareAtStr),
             priceWithDiscounts: null,
@@ -117,219 +127,74 @@ export async function processBulkData(url: string, shop: string) {
           },
         });
 
+        // 3) Run Omnibus calculation
+        const calc = await triggerCalculationForSelectedProducts(
+          record,
+          shop,
+          settings
+        );
+        console.log("Calc is : ", calc);
+
+        // 4) Push metafields for each variant result
+        for (const result of calc) {
+          const variantGid = `gid://shopify/ProductVariant/${result.variantId.toString()}`;
+
+          const latest = await db.priceHistory.findFirst({
+            where: { variantId: variant.id },
+            orderBy: { date: "desc" },
+          });
+
+          const currentPrice = latest ? Number(latest.price) : null;
+
+          const summary: OmnibusSummaryMetafield = {
+            market: defaultMarket,
+            current_price: currentPrice,
+            omnibus_price: result.omnibusPrice,
+            compliance_status: result.complianceStatus,
+            last_calculated_at: new Date().toISOString(),
+          };
+
+          const historyRows = await db.priceHistory.findMany({
+            where: { variantId: variant.id, market: defaultMarket },
+            orderBy: { date: "desc" },
+            take: settings.timeframe ?? 30,
+          });
+
+          const history: OmnibusPriceHistoryMetafield = {
+            market: defaultMarket,
+            timeframe_days: settings.timeframe ?? 30,
+            entries: historyRows.map((row) => ({
+              date: row.date.toISOString(),
+              price: Number(row.price),
+              compare_at_price: row.compareAtPrice
+                ? Number(row.compareAtPrice)
+                : null,
+            })),
+          };
+
+          await setOmnibusMetafieldsForVariant({
+            admin,
+            variantGid,
+            summary,
+            history,
+          });
+        }
+
         variantCount++;
+        continue;
       }
 
-
+      // For now we just log any extra records (metafields, etc.)
       console.log("<<<-------------------- Record is : ------------------->>>");
-      console.log(record)
-
-
-      // discounts
-
-      if (record.id.includes("DiscountCodeNode") && record.discount) {
-        const d = record.discount as any;
-        const typename = d.__typename as string | undefined;
-
-        // Only process these two types
-        if (
-          typename !== "DiscountCodeBasic" &&
-          typename !== "DiscountAutomaticBasic"
-        ) {
-          continue;
-        }
-
-        const discountNumericId = toBigIntId(record.id);
-
-        // amount + type
-        let amount = 0;
-        let type = typename ?? "UNKNOWN";
-
-        const value = d.customerGets?.value;
-        if (value) {
-          if (typeof value.percentage === "number") {
-            amount = value.percentage; // 10 => 10%
-            type = "percentage";
-          } else if (value.amount?.amount != null) {
-            amount = Number(value.amount.amount); // 20.0 fixed amount
-            type = "fixed_amount";
-          }
-        }
-
-        // appliesTo: if allItems, treat as PRODUCT for now.
-        let appliesTo: "PRODUCT" | "COLLECTION" = "PRODUCT";
-        const items = d.customerGets?.items;
-        if (items?.collections) {
-          appliesTo = "COLLECTION";
-        }
-
-        // Keep existing productIds / collectionIds if row already exists
-        const existing = await db.discount.findUnique({
-          where: { discountId: discountNumericId },
-        });
-
-        await db.discount.upsert({
-          where: {
-            discountId: discountNumericId,
-          },
-          create: {
-            shop,
-            discountId: discountNumericId,
-            amount,
-            type,
-            appliesTo,
-            productIds: [],
-            collectionIds: [],
-          },
-          update: {
-            shop,
-            amount,
-            type,
-            appliesTo,
-            // preserve arrays
-            productIds: existing?.productIds ?? [],
-            collectionIds: existing?.collectionIds ?? [],
-          },
-        });
-      }
-
-      // DISCOUNT ↔ PRODUCT join rows
-      if (
-        record.id.includes("Product") &&
-        record.__parentId?.includes("DiscountCodeNode") &&
-        !record.handle
-      ) {
-        const discountNumericId = toBigIntId(record.__parentId);
-
-        const productIdStr = toBigIntId(record.id).toString();
-
-        const existing = await db.discount.findUnique({
-          where: { discountId: discountNumericId },
-        });
-
-        // If for some reason the base discount row wasn't seen yet, create a minimal one
-        if (!existing) {
-          await db.discount.create({
-            data: {
-              shop,
-              discountId: discountNumericId,
-              amount: 0,
-              type: "UNKNOWN",
-              appliesTo: "PRODUCT",
-              productIds: [productIdStr],
-              collectionIds: [],
-            },
-          });
-        } else {
-          const productIds = existing.productIds.includes(productIdStr)
-            ? existing.productIds
-            : [...existing.productIds, productIdStr];
-
-          await db.discount.update({
-            where: { discountId: discountNumericId },
-            data: {
-              appliesTo: "PRODUCT",
-              productIds,
-            },
-          });
-        }
-      }
-
-      // DISCOUNT ↔ COLLECTION join rows
-      if (
-        record.id.includes("Collection") &&
-        record.__parentId?.includes("DiscountCodeNode") &&
-        !record.handle
-      ) {
-        const discountNumericId = toBigIntId(record.__parentId);
-
-        const existing = await db.discount.findUnique({
-          where: { discountId: discountNumericId },
-        });
-
-        if (!existing) {
-          await db.discount.create({
-            data: {
-              shop,
-              discountId: discountNumericId,
-              amount: 0,
-              type: "UNKNOWN",
-              appliesTo: "COLLECTION",
-              productIds: [],
-              collectionIds: [record.id],
-            },
-          });
-        } else {
-          const collectionIds = existing.collectionIds.includes(record.id)
-            ? existing.collectionIds
-            : [...existing.collectionIds, record.id];
-
-          await db.discount.update({
-            where: { discountId: discountNumericId },
-            data: {
-              appliesTo: "COLLECTION",
-              collectionIds,
-            },
-          });
-        }
-      }
-
-      // PRODUCT ↔ COLLECTION join rows
-      // if (
-      //   record.id.includes("Product") &&
-      //   record.__parentId?.includes("Collection") &&
-      //   !record.handle // join rows have no handle/status
-      // ) {
-      //   const productNumericId = toBigIntId(record.id); // product
-      //   const collectionNumericId = toBigIntId(record.__parentId); // collection
-      //
-      //   await db.product.update({
-      //     where: { productId: productNumericId },
-      //     data: {
-      //       collections: {
-      //         connect: { collectionId: collectionNumericId },
-      //       },
-      //     },
-      //   });
-      // }
-
-      // PRODUCT ↔ COLLECTION join rows
-      if (
-        record.id.includes("Product") &&
-        record.__parentId?.includes("Collection") &&
-        !record.handle // join rows have no handle/status
-      ) {
-        const productNumericId = toBigIntId(record.id); // product
-        const collectionNumericId = toBigIntId(record.__parentId); // collection
-
-        // Only connect if the product already exists
-        const existingProduct = await db.product.findUnique({
-          where: { productId: productNumericId },
-          select: { productId: true },
-        });
-
-        if (!existingProduct) {
-          // Product might not be imported yet – skip this join
-          // console.log("Skipping join, product not found:", productNumericId.toString());
-          continue;
-        }
-
-        await db.collection.update({
-          where: { collectionId: collectionNumericId },
-          data: {
-            products: {
-              connect: { productId: existingProduct.productId },
-            },
-          },
-        });
-      }
+      console.log(record);
     }
   }
 
   console.log(
-    `Parsed ${lineCount} lines and saved ${variantCount} variants for ${shop}`,
+    `Parsed ${lineCount} lines and saved ${variantCount} variants for ${shop}`
   );
 }
+
 
 
 export async function fetchCollection(admin: AdminApiContextWithoutRest) {
@@ -386,22 +251,6 @@ export async function fetchCollection(admin: AdminApiContextWithoutRest) {
           handle: node.handle,
         },
       });
-
-      // connect products to this collection
-      // for (const prodEdge of node.products.edges as any[]) {
-      //   const productGid = prodEdge.node.id as string;
-      //   const productNumericId = toBigIntId(productGid);
-      //
-      //   // if the product exists, connect it to the collection
-      //   await db.product.update({
-      //     where: { productId: productNumericId },
-      //     data: {
-      //       collections: {
-      //         connect: { collectionId: collectionNumericId },
-      //       },
-      //     },
-      //   });
-      // }
 
       // connect products to this collection
       for (const prodEdge of node.products.edges as any[]) {

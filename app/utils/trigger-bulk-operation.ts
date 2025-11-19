@@ -1,119 +1,62 @@
 import type { AdminApiContextWithoutRest } from "node_modules/@shopify/shopify-app-remix/dist/ts/server/clients";
 
 export async function triggerBulkOperation(admin: AdminApiContextWithoutRest) {
+
   const mutation = `
-mutation {
-  bulkOperationRunQuery(
-    query: """
-    {
-      products(first: 250) {
-        edges {
-          node {
-            id
-            handle
-            status
-            variants(first: 250) {
-              edges {
-                node {
-                  id
-                  title
-                  price
-                  compareAtPrice
-                  inventoryQuantity
+  mutation {
+    bulkOperationRunQuery(
+      query: """
+      {
+        products(query: "published_status:published AND status:active") {
+          edges {
+            node {
+              id
+              handle
+              tags
+              status
+              onlineStoreUrl
+              createdAt
+              priceRangeV2 {
+                maxVariantPrice {
+                  amount
+                  currencyCode
+                }
+                minVariantPrice {
+                  amount
+                  currencyCode
                 }
               }
-            }
-          }
-        }
-      }
+              variants {
+                edges {
+                  node {
+                    availableForSale
+                    createdAt
+                    price
+                    compareAtPrice
+                    displayName
+                    id
+                    legacyResourceId
+                    taxCode
+                    taxable
 
-      discountNodes(first: 250) {
-        edges {
-          node {
-            id
-            discount {
-              __typename
-
-              # Only the types you care about
-              ... on DiscountCodeBasic {
-                title
-                summary
-                status
-                startsAt
-                endsAt
-                customerGets {
-                  value {
-                    ... on DiscountPercentage {
-                      percentage
-                    }
-                    ... on DiscountAmount {
-                      amount {
-                        amount
-                      }
-                    }
-                  }
-                  items {
-                    ... on AllDiscountItems {
-                      allItems
-                    }
-                    ... on DiscountProducts {
-                      products(first: 250) {
-                        edges {
-                          node {
-                            id
-                          }
+                    legacyMetafields: metafields(namespace: "omnibus") {
+                      edges {
+                        node {
+                          id
+                          value
+                          key
+                          namespace
                         }
                       }
                     }
-                    ... on DiscountCollections {
-                      collections(first: 250) {
-                        edges {
-                          node {
-                            id
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
 
-              ... on DiscountAutomaticBasic {
-                title
-                summary
-                status
-                startsAt
-                endsAt
-                customerGets {
-                  value {
-                    ... on DiscountPercentage {
-                      percentage
-                    }
-                    ... on DiscountAmount {
-                      amount {
-                        amount
-                      }
-                    }
-                  }
-                  items {
-                    ... on AllDiscountItems {
-                      allItems
-                    }
-                    ... on DiscountProducts {
-                      products(first: 250) {
-                        edges {
-                          node {
-                            id
-                          }
-                        }
-                      }
-                    }
-                    ... on DiscountCollections {
-                      collections(first: 250) {
-                        edges {
-                          node {
-                            id
-                          }
+                    appMetafields: metafields(namespace: "$app:omnibus") {
+                      edges {
+                        node {
+                          id
+                          value
+                          key
+                          namespace
                         }
                       }
                     }
@@ -124,23 +67,20 @@ mutation {
           }
         }
       }
+      """
+    ) {
+      bulkOperation {
+        id
+        status
+      }
+      userErrors {
+        field
+        message
+      }
     }
-    """
-  ) {
-    bulkOperation {
-      id
-      status
-    }
-    userErrors {
-      field
-      message
-    }
-  }
-}
-`
+  }`
 
   const result = await admin.graphql(mutation);
   const { data } = await result.json();
-  console.log("Data is : ", data);
   return data.bulkOperationRunQuery.bulkOperation.status;
 }
