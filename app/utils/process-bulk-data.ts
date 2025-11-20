@@ -1,13 +1,24 @@
 import db from "app/db.server";
-import { getOmnibusSettings, toBigIntId } from "./helpers";
-import { triggerCalculationForSelectedProducts } from "./calculate-omnibus-price";
+import { toBigIntId } from "./helpers";
 import { Prisma } from "@prisma/client";
 import type { AdminApiContextWithoutRest } from "node_modules/@shopify/shopify-app-remix/dist/ts/server/clients";
-import { setOmnibusMetafieldsForVariant } from "./product-metafield";
-import type {
-  OmnibusPriceHistoryMetafield,
-  OmnibusSummaryMetafield,
-} from "app/types";
+import { pushOmnibusForProduct } from "./calculate-omnibus-price";
+
+// Track discounts and their targets
+const discountMap = new Map<bigint, {
+  discountId: bigint;
+  type: "PERCENTAGE" | "AMOUNT";
+  amount: number;
+  appliesTo: "PRODUCT" | "COLLECTION";
+  productIds: Set<string>;
+  collectionIds: Set<string>;
+}>();
+
+// Map of "parent gid" => discountId (numeric)
+// We don't know whether __parentId will be DiscountNode id or DiscountCodeBasic id,
+// so we store both as possible parents.
+const discountParentLookup = new Map<string, bigint>();
+
 
 export async function processBulkData(
   url: string,
@@ -22,10 +33,6 @@ export async function processBulkData(
     return;
   }
 
-  const settings = await getOmnibusSettings(shop);
-  console.log("Settings (process-bulk): ", settings);
-
-  // Default market only for now.
   const shopData = await db.shop.findUnique({
     where: { shop },
     select: { currencyCode: true },
@@ -41,6 +48,9 @@ export async function processBulkData(
 
   let lineCount = 0;
   let variantCount = 0;
+
+  // NEW: track touched products to recalc later
+  const touchedProducts = new Set<bigint>();
 
   while (true) {
     const { done, value } = await reader.read();
@@ -84,6 +94,8 @@ export async function processBulkData(
           },
         });
 
+        // track product
+        touchedProducts.add(productNumericId);
         continue;
       }
 
@@ -127,62 +139,139 @@ export async function processBulkData(
           },
         });
 
-        // 3) Run Omnibus calculation
-        const calc = await triggerCalculationForSelectedProducts(
-          record,
-          shop,
-          settings
-        );
-        console.log("Calc is : ", calc);
-
-        // 4) Push metafields for each variant result
-        for (const result of calc) {
-          const variantGid = `gid://shopify/ProductVariant/${result.variantId.toString()}`;
-
-          const latest = await db.priceHistory.findFirst({
-            where: { variantId: variant.id },
-            orderBy: { date: "desc" },
-          });
-
-          const currentPrice = latest ? Number(latest.price) : null;
-
-          const summary: OmnibusSummaryMetafield = {
-            market: defaultMarket,
-            current_price: currentPrice,
-            omnibus_price: result.omnibusPrice,
-            compliance_status: result.complianceStatus,
-            last_calculated_at: new Date().toISOString(),
-          };
-
-          const historyRows = await db.priceHistory.findMany({
-            where: { variantId: variant.id, market: defaultMarket },
-            orderBy: { date: "desc" },
-            take: settings.timeframe ?? 30,
-          });
-
-          const history: OmnibusPriceHistoryMetafield = {
-            market: defaultMarket,
-            timeframe_days: settings.timeframe ?? 30,
-            entries: historyRows.map((row) => ({
-              date: row.date.toISOString(),
-              price: Number(row.price),
-              compare_at_price: row.compareAtPrice
-                ? Number(row.compareAtPrice)
-                : null,
-            })),
-          };
-
-          await setOmnibusMetafieldsForVariant({
-            admin,
-            variantGid,
-            summary,
-            history,
-          });
-        }
+        // track product for Omnibus
+        touchedProducts.add(parentProductId);
 
         variantCount++;
         continue;
       }
+
+      // ---------- DISCOUNT TARGET PRODUCT LINES ----------
+      if (
+        typeof record.id === "string" &&
+        record.id.includes("gid://shopify/Product/") &&
+        record.__parentId &&
+        typeof record.__parentId === "string" &&
+        discountParentLookup.has(record.__parentId)
+      ) {
+        const discountId = discountParentLookup.get(record.__parentId)!;
+        const entry = discountMap.get(discountId);
+        if (entry) {
+          const numeric = toBigIntId(record.id).toString();
+          entry.productIds.add(numeric);
+        }
+        continue;
+      }
+
+      // ---------- DISCOUNT TARGET COLLECTION LINES ----------
+      if (
+        typeof record.id === "string" &&
+        record.id.includes("gid://shopify/Collection/") &&
+        record.__parentId &&
+        typeof record.__parentId === "string" &&
+        discountParentLookup.has(record.__parentId)
+      ) {
+        const discountId = discountParentLookup.get(record.__parentId)!;
+        const entry = discountMap.get(discountId);
+        if (entry) {
+          const numeric = toBigIntId(record.id).toString();
+          entry.collectionIds.add(numeric);
+        }
+        continue;
+      }
+
+
+      // ---------- DISCOUNT LINES ----------
+      if (
+        typeof record.id === "string" &&
+        (
+          record.id.includes("gid://shopify/DiscountCodeNode/") ||
+          record.id.includes("gid://shopify/DiscountAutomaticNode/")
+        ) &&
+        record.discount
+      ) {
+        const normalized = normalizeDiscountFromBulk(record);
+        if (!normalized) {
+          console.warn("Could not normalize discount from bulk record:", record);
+          continue;
+        }
+
+        const { discountId, type, amount } = normalized;
+
+        // Initialize or update in the in-memory map
+        let entry = discountMap.get(discountId);
+        if (!entry) {
+          entry = {
+            discountId,
+            type,
+            amount,
+            appliesTo: "COLLECTION",           // temporary, will recompute after we know targets
+            productIds: new Set<string>(),
+            collectionIds: new Set<string>(),
+          };
+          discountMap.set(discountId, entry);
+        } else {
+          entry.type = type;
+          entry.amount = amount;
+        }
+
+        // Register possible parent ids for children (__parentId)
+        const discountNodeGid = record.id as string;          // gid://shopify/DiscountCodeNode/...
+        discountParentLookup.set(discountNodeGid, discountId);
+
+        const discountGid = typeof record.discount.id === "string"
+          ? record.discount.id as string                      // gid://shopify/DiscountCodeBasic/...
+          : null;
+
+        if (discountGid) {
+          discountParentLookup.set(discountGid, discountId);
+        }
+
+        continue;
+      }
+
+
+
+
+      // ---------- DISCOUNT LINES ----------
+      // if (
+      //   typeof record.id === "string" &&
+      //   (
+      //     record.id.includes("gid://shopify/DiscountCodeNode/") ||
+      //     record.id.includes("gid://shopify/DiscountAutomaticNode/")
+      //   ) &&
+      //   record.discount
+      // ) {
+      //   const normalized = normalizeDiscountFromBulk(record);
+      //   if (!normalized) {
+      //     console.warn("Could not normalize discount from bulk record:", record);
+      //     continue;
+      //   }
+      //
+      //   await db.discount.upsert({
+      //     where: { discountId: normalized.discountId },
+      //     create: {
+      //       shop,
+      //       discountId: normalized.discountId,
+      //       amount: normalized.amount,
+      //       type: normalized.type,
+      //       appliesTo: normalized.appliesTo,
+      //       productIds: normalized.productIds,
+      //       collectionIds: normalized.collectionIds,
+      //     },
+      //     update: {
+      //       amount: normalized.amount,
+      //       type: normalized.type,
+      //       appliesTo: normalized.appliesTo,
+      //       productIds: normalized.productIds,
+      //       collectionIds: normalized.collectionIds,
+      //       updatedAt: new Date(),
+      //     },
+      //   });
+      //
+      //   continue;
+      // }
+
 
       // For now we just log any extra records (metafields, etc.)
       console.log("<<<-------------------- Record is : ------------------->>>");
@@ -190,9 +279,174 @@ export async function processBulkData(
     }
   }
 
+  // AFTER reading JSONL: persist discounts with collected targets
+  for (const entry of discountMap.values()) {
+    const productIdsArr = Array.from(entry.productIds);
+    const collectionIdsArr = Array.from(entry.collectionIds);
+
+    // Decide appliesTo based on what we actually collected
+    let appliesTo: "PRODUCT" | "COLLECTION";
+    if (productIdsArr.length && !collectionIdsArr.length) {
+      appliesTo = "PRODUCT";
+    } else {
+      // either pure collections or "all items" / mixed -> treat as COLLECTION
+      appliesTo = "COLLECTION";
+    }
+
+    await db.discount.upsert({
+      where: { discountId: entry.discountId },
+      create: {
+        shop,
+        discountId: entry.discountId,
+        amount: entry.amount,
+        type: entry.type,
+        appliesTo,
+        productIds: productIdsArr,
+        collectionIds: collectionIdsArr,
+      },
+      update: {
+        amount: entry.amount,
+        type: entry.type,
+        appliesTo,
+        productIds: productIdsArr,
+        collectionIds: collectionIdsArr,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  // AFTER reading JSONL: ONE central calculator call per product
+  for (const productId of touchedProducts) {
+    await pushOmnibusForProduct(admin, shop, productId);
+  }
+
   console.log(
     `Parsed ${lineCount} lines and saved ${variantCount} variants for ${shop}`
   );
+}
+
+
+// ---------- HELPER: normalize a discountNode JSONL record ----------
+type NormalizedBulkDiscount = {
+  discountId: bigint;
+  type: "PERCENTAGE" | "AMOUNT";
+  amount: number;
+  appliesTo: "PRODUCT" | "COLLECTION";
+  productIds: string[];
+  collectionIds: string[];
+};
+
+
+function normalizeDiscountFromBulk(record: any): NormalizedBulkDiscount | null {
+  const discount = record.discount;
+  if (!discount) return null;
+
+  const typename = discount.__typename as string | undefined;
+
+  // Only keep basic %/amount discounts
+  if (
+    typename !== "DiscountCodeBasic" &&
+    typename !== "DiscountAutomaticBasic"
+  ) {
+    // e.g. FreeShipping, Bxgy -> ignore
+    return null;
+  }
+
+  // Prefer real discount GID, fallback to node id
+  const discountGid =
+    typeof discount.id === "string" ? discount.id : (record.id as string);
+  const discountId = toBigIntId(discountGid);
+
+  // ----- Type + amount -----
+  let type: "PERCENTAGE" | "AMOUNT" = "PERCENTAGE";
+  let amount = 0;
+
+  const value = discount.customerGets?.value;
+
+  if (!value) {
+    // No usable value → skip
+    return null;
+  }
+
+  switch (value.__typename) {
+    case "DiscountPercentage":
+      type = "PERCENTAGE";
+      amount = Number(value.percentage ?? 0);
+      break;
+
+    case "DiscountAmount":
+      type = "AMOUNT";
+      amount = Number(value.amount?.amount ?? 0);
+      break;
+
+    case "DiscountOnQuantity": {
+      const effect = value.effect;
+      if (effect?.__typename === "DiscountPercentage") {
+        type = "PERCENTAGE";
+        amount = Number(effect.percentage ?? 0);
+      } else {
+        // Non-percentage effect → skip for now
+        return null;
+      }
+      break;
+    }
+
+    default:
+      // Unsupported value type → skip
+      return null;
+  }
+
+  // ----- AppliesTo + product/collection ids -----
+  const productIds: string[] = [];
+  const collectionIds: string[] = [];
+
+  const items = discount.customerGets?.items;
+
+  // items is a SINGLE union object, not an array
+  if (items && typeof items === "object") {
+    if (items.__typename === "DiscountProducts") {
+      for (const edge of items.products?.edges ?? []) {
+        const gid = edge?.node?.id as string | undefined;
+        if (!gid) continue;
+        const numeric = toBigIntId(gid).toString();
+        if (!productIds.includes(numeric)) productIds.push(numeric);
+      }
+    }
+
+    if (items.__typename === "DiscountCollections") {
+      for (const edge of items.collections?.edges ?? []) {
+        const gid = edge?.node?.id as string | undefined;
+        if (!gid) continue;
+        const numeric = toBigIntId(gid).toString();
+        if (!collectionIds.includes(numeric)) collectionIds.push(numeric);
+      }
+    }
+
+    if (items.__typename === "AllDiscountItems") {
+      // Discount applies to ALL products.
+      // For now we can:
+      // - either skip (return null),
+      // - or treat as COLLECTION-wide/sitewide.
+      // For now, let's just treat as COLLECTION-wide without ids:
+      // return null; // if you want to ignore sitewide discounts
+    }
+  }
+
+  let appliesTo: "PRODUCT" | "COLLECTION";
+  if (productIds.length && !collectionIds.length) {
+    appliesTo = "PRODUCT";
+  } else {
+    appliesTo = "COLLECTION";
+  }
+
+  return {
+    discountId,
+    type,
+    amount,
+    appliesTo,
+    productIds,
+    collectionIds,
+  };
 }
 
 
