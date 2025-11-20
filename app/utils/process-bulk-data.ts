@@ -1,5 +1,5 @@
 import db from "app/db.server";
-import { toBigIntId } from "./helpers";
+import { moneyToMinorUnits, toBigIntId } from "./helpers";
 import { Prisma } from "@prisma/client";
 import type { AdminApiContextWithoutRest } from "node_modules/@shopify/shopify-app-remix/dist/ts/server/clients";
 import { pushOmnibusForProduct } from "./calculate-omnibus-price";
@@ -198,6 +198,8 @@ export async function processBulkData(
 
         const { discountId, type, amount } = normalized;
 
+        console.log("Amount is : ", amount);
+
         // Initialize or update in the in-memory map
         let entry = discountMap.get(discountId);
         if (!entry) {
@@ -230,49 +232,6 @@ export async function processBulkData(
         continue;
       }
 
-
-
-
-      // ---------- DISCOUNT LINES ----------
-      // if (
-      //   typeof record.id === "string" &&
-      //   (
-      //     record.id.includes("gid://shopify/DiscountCodeNode/") ||
-      //     record.id.includes("gid://shopify/DiscountAutomaticNode/")
-      //   ) &&
-      //   record.discount
-      // ) {
-      //   const normalized = normalizeDiscountFromBulk(record);
-      //   if (!normalized) {
-      //     console.warn("Could not normalize discount from bulk record:", record);
-      //     continue;
-      //   }
-      //
-      //   await db.discount.upsert({
-      //     where: { discountId: normalized.discountId },
-      //     create: {
-      //       shop,
-      //       discountId: normalized.discountId,
-      //       amount: normalized.amount,
-      //       type: normalized.type,
-      //       appliesTo: normalized.appliesTo,
-      //       productIds: normalized.productIds,
-      //       collectionIds: normalized.collectionIds,
-      //     },
-      //     update: {
-      //       amount: normalized.amount,
-      //       type: normalized.type,
-      //       appliesTo: normalized.appliesTo,
-      //       productIds: normalized.productIds,
-      //       collectionIds: normalized.collectionIds,
-      //       updatedAt: new Date(),
-      //     },
-      //   });
-      //
-      //   continue;
-      // }
-
-
       // For now we just log any extra records (metafields, etc.)
       console.log("<<<-------------------- Record is : ------------------->>>");
       console.log(record);
@@ -292,6 +251,8 @@ export async function processBulkData(
       // either pure collections or "all items" / mixed -> treat as COLLECTION
       appliesTo = "COLLECTION";
     }
+
+    console.log("Amount is : ", entry.amount)
 
     await db.discount.upsert({
       where: { discountId: entry.discountId },
@@ -368,6 +329,8 @@ function normalizeDiscountFromBulk(record: any): NormalizedBulkDiscount | null {
     return null;
   }
 
+  console.log("Value is : ", value);
+
   switch (value.__typename) {
     case "DiscountPercentage":
       type = "PERCENTAGE";
@@ -375,8 +338,9 @@ function normalizeDiscountFromBulk(record: any): NormalizedBulkDiscount | null {
       break;
 
     case "DiscountAmount":
+      const amt = value.amount?.amount ?? 0
+      amount = moneyToMinorUnits(amt, 2);
       type = "AMOUNT";
-      amount = Number(value.amount?.amount ?? 0);
       break;
 
     case "DiscountOnQuantity": {
