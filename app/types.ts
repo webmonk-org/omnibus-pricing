@@ -102,7 +102,7 @@ export type NormalizedTargets = {
   productIds: string[];
   collectionIds: string[];
   appliesTo: "PRODUCT" | "COLLECTION";
-  type: "percentage" | "fixed_amount";
+  type: "PERCENTAGE" | "AMOUNT";
   amount: number;
 };
 
@@ -124,30 +124,39 @@ export type OmnibusPriceHistoryPoint = {
 };
 
 export type OmnibusSummaryMetafield = {
-  timeframeDays: number;
-  campaignLengthDays: number;
-  currentPrice: string;
-  currentCurrency: string;
-  lowestPrice: string | null;
-  lowestPriceDate: string | null;
-  compareAtPrice: string | null;
-  complianceStatus:
-  | "compliant"
-  | "non_compliant"
-  | "not_on_sale"
-  | "not_enough_data";
-  reason?: string;
-  lastCalculatedAt: string;
+  // default market of the store (for now just one)
+  market: string;
+  current_price: number | null;
+  omnibus_price: number | null;
+  compliance_status: "compliant" | "non_compliant" | "not_on_sale" | "not_enough_data";
+  last_calculated_at: string; // ISO
 };
 
 export type OmnibusPriceHistoryMetafield = {
-  currency: string;       // "EUR"
-  points: OmnibusPriceHistoryPoint[];
+  // default market of the store (for now just one)
+  market: string;
+  timeframe_days: number;
+  entries: {
+    date: string; // ISO
+    price: number;
+    compare_at_price: number | null;
+  }[];
 };
+
+type DiscountMode = "include" | "exclude" | "all";
 
 export type Settings = {
   timeframe: number;
   campaignLength: number;
-  discounts: "include" | "exclude";
+  discounts: DiscountMode;
   selectedDiscountIds: string[];
+  market?: string
+};
+
+
+export const DEFAULT_SETTINGS: Settings = {
+  timeframe: 30,
+  campaignLength: 60,
+  discounts: "exclude",
+  selectedDiscountIds: [],
 };

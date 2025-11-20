@@ -1,6 +1,7 @@
+import { Prisma } from '@prisma/client';
 import type { SessionData } from '@remix-run/node';
 import db from 'app/db.server'
-import type { DiscountContext, DiscountItem, NormalizedTargets } from 'app/types';
+import type { NormalizedTargets, Settings } from 'app/types';
 import type { AdminApiContextWithoutRest } from 'node_modules/@shopify/shopify-app-remix/dist/ts/server/clients';
 
 export function toBigIntId(raw: string | number | bigint | undefined): bigint {
@@ -207,32 +208,32 @@ export async function fetchAndNormalizeDiscount(
       collectionIds: [...new Set(collectionIds)],
       appliesTo,
       // Fallbacks if you want to persist anyway; or return null to skip
-      type: "percentage",
+      type: "PERCENTAGE",
       amount: 0
     };
   }
 
-  let type: "percentage" | "fixed_amount";
+  let type: "PERCENTAGE" | "AMOUNT";
   let amount: number;
 
   switch (value.__typename) {
     case "DiscountPercentage": {
       console.log("persentage is :", value.percentage);
       amount = Number(value.percentage ?? 0);
-      type = "percentage";
+      type = "PERCENTAGE";
       break;
     }
     case "DiscountAmount": {
       const amt = value.amount?.amount ?? "0";
       // If you need exact decimals per currency, add a currency map.
       amount = moneyToMinorUnits(amt, 2);
-      type = "fixed_amount";
+      type = "AMOUNT";
       break;
     }
     default: {
       console.log("Unhandled customerGets.value typename:", value.__typename);
       // Choose to skip or store a neutral value:
-      type = "percentage";
+      type = "PERCENTAGE";
       amount = 0;
       break;
     }
@@ -245,4 +246,90 @@ export async function fetchAndNormalizeDiscount(
     type,
     amount,
   };
+}
+
+export async function getOmnibusSettings(shop: string): Promise<Settings> {
+  const sessionRow = await db.session.findFirst({
+    where: { shop },
+    select: { settings: true },
+  });
+
+  if (!sessionRow || !sessionRow.settings) {
+    throw new Error(`Missing settings for shop ${shop}`);
+  }
+
+  const raw = sessionRow.settings;
+
+  // Json field may be stored as object or string;
+  // handle both cases safely.
+  const parsed: any =
+    typeof raw === "string"
+      ? JSON.parse(raw)
+      : raw;
+
+  return {
+    timeframe: parsed.timeframe ?? 30,
+    campaignLength: parsed.campaignLength ?? 60,
+    discounts: parsed.discounts ?? "all",
+    selectedDiscountIds: parsed.selectedDiscountIds ?? [],
+    market: parsed.market, // optional, if you later add this
+  };
+}
+
+export async function createPriceHistoryFromProductWebhook(payload: any, shop: string) {
+  const shopData = await db.shop.findUnique({
+    where: { shop },
+    select: { currencyCode: true },
+  });
+
+  // Same default-market logic as process-bulk-data.ts
+  const defaultMarket = shopData?.currencyCode ?? "USD";
+  const now = new Date();
+
+  const variants = payload.variants ?? [];
+  if (!variants.length) return;
+
+  await Promise.all(
+    variants.map(async (v: any) => {
+      // Webhook gives numeric ID like "9020..."
+      const variantNumericId = BigInt(v.id);
+
+      const variantRow = await db.variant.findUnique({
+        where: {
+          shop_variantId: {
+            shop,
+            variantId: variantNumericId,
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!variantRow) {
+        console.warn(
+          "createPriceHistoryFromProductWebhook: variant row missing for",
+          variantNumericId.toString()
+        );
+        return;
+      }
+
+      // REST payload uses price / compare_at_price
+      const priceStr = v.price ?? "0";
+      const compareAtStr =
+        v.compare_at_price != null ? v.compare_at_price : v.price ?? "0";
+
+      await db.priceHistory.create({
+        data: {
+          variant: {
+            connect: { id: variantRow.id },
+          },
+          date: now,
+          market: defaultMarket,
+          price: new Prisma.Decimal(priceStr),
+          compareAtPrice: new Prisma.Decimal(compareAtStr),
+          priceWithDiscounts: null,
+          compareAtPriceWithDiscounts: null,
+        },
+      });
+    })
+  );
 }

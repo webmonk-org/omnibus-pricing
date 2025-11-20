@@ -2,10 +2,12 @@ import type { SessionData } from "@remix-run/node";
 import db from "app/db.server";
 import type { AdminApiContextWithoutRest } from "node_modules/@shopify/shopify-app-remix/dist/ts/server/clients";
 import { fetchCollection, processBulkData } from "./process-bulk-data";
-import { updateCalculationInProgress, toBigIntId, fetchAndNormalizeDiscount, payloadParser } from "./helpers"
+import { updateCalculationInProgress, toBigIntId, fetchAndNormalizeDiscount, createPriceHistoryFromProductWebhook } from "./helpers"
+
+import { pushOmnibusForProduct } from "./calculate-omnibus-price";
 
 import type { VariantRecord } from "app/types";
-import { triggerCalculationForSelectedProducts } from "./calculate-omnibus-price";
+import { Prisma } from "@prisma/client";
 
 export async function uninstalled(shop: string) {
   await db.session.deleteMany({ where: { shop } });
@@ -52,10 +54,11 @@ export async function bulkOpFinish(admin: AdminApiContextWithoutRest, id: string
   if (!bulkOp || bulkOp.status !== "COMPLETED" || !bulkOp.url) {
     console.log("Bulk op not ready or missing url", { shop, bulkOp });
     return new Response();
+
   }
 
   // Save the variants in DB
-  await processBulkData(bulkOp.url, shop)
+  await processBulkData(bulkOp.url, shop, admin)
 
   // save collection in db from here for now
   await fetchCollection(admin);
@@ -64,30 +67,17 @@ export async function bulkOpFinish(admin: AdminApiContextWithoutRest, id: string
   updateCalculationInProgress(session, false);
 }
 
-export async function handleProductCreate(payload: any, shop: string) {
+export async function handleProductCreate(payload: any, shop: string, admin: AdminApiContextWithoutRest) {
   try {
     console.log("Comming payload is : ", payload);
-    payloadParser(payload);
 
     const productId = BigInt(payload.id);
-    const productStatus =
-      payload.status === "active" || payload.status === "ACTIVE"
-        ? "active"
-        : "archived";
-
-
 
     const variantsData = payload.variants.map((v: any) => {
-
-      // // calcualte monibus
-      // const { currentDiscountStartedAt, complianceStatus } = await triggerCalculationForSelectedProducts(payload, "CRUD_VARIANTS", shop)
-      // console.log("currentDiscountStartedAt: ", currentDiscountStartedAt);
-      // console.log("complianceStatus: ", complianceStatus);
       return {
         shop,
         productId,
         variantId: BigInt(v.id),
-        status: productStatus,
         complianceStatus: "not_enough_data",
       }
     });
@@ -114,30 +104,29 @@ export async function handleProductCreate(payload: any, shop: string) {
       });
     });
 
+
     console.log(
       `Created ${variantsData.length} variants for product ${productId} in shop ${shop}`
     );
+
+    await createPriceHistoryFromProductWebhook(payload, shop);
+    await pushOmnibusForProduct(admin, shop, productId);
+
   } catch (err) {
     console.error("Error creating product: ", err);
   }
 }
 
 
-export async function handleProductUpdate(payload: any, shop: string) {
+export async function handleProductUpdate(payload: any, shop: string, admin: AdminApiContextWithoutRest) {
   try {
     const productId = BigInt(payload.id);
-    payloadParser(payload);
 
-    const productStatus =
-      payload.status === "active" || payload.status === "ACTIVE"
-        ? "active"
-        : "archived";
 
     const variantsData = payload.variants.map((v: any) => ({
       shop,
       productId,
       variantId: BigInt(v.id),
-      status: productStatus,
     }));
 
     await db.$transaction(async (tx) => {
@@ -182,6 +171,10 @@ export async function handleProductUpdate(payload: any, shop: string) {
     console.log(
       `Upserted ${variantsData.length} variants for product ${productId} in shop ${shop} (products/update)`
     );
+
+    await createPriceHistoryFromProductWebhook(payload, shop);
+
+    await pushOmnibusForProduct(admin, shop, productId);
   } catch (err) {
     console.error("Error Updating products: ", err);
   }
@@ -299,63 +292,6 @@ export async function handleUpdateCollection(payload: any, shop: string, admin: 
   try {
     const collectionId = BigInt(payload.id);
 
-
-
-
-
-
-
-    // const collectionNumericId = toBigIntId(payload.id);
-    // const collectionIdStr = collectionNumericId.toString();
-    //
-    // // 1) Any discount in DB applies to this collection?
-    // const discounts = await db.discount.findMany({
-    //   where: {
-    //     shop,
-    //     appliesTo: "COLLECTION",
-    //     collectionIds: {
-    //       has: collectionIdStr,
-    //     },
-    //   },
-    // });
-    //
-    //
-    // if (discounts.length === 0) {
-    //   // No → Do nothing
-    //   console.log(
-    //     `No discounts apply to collection ${collectionIdStr} – skipping omnibus recalculation`,
-    //   );
-    //   return;
-    // }
-    //
-    // // 2) Get products in this collection
-    // const products = await db.product.findMany({
-    //   where: {
-    //     shop,
-    //     collections: {
-    //       some: { collectionId: collectionNumericId },
-    //     },
-    //   },
-    //   select: { productId: true },
-    // });
-    //
-    // const productIds = products.map((p) => p.productId);
-    //
-    // // 3) Products count more than 30? -> shared helper
-    // await maybeRecalcForProducts(shop, productIds);
-
-
-
-
-
-
-
-
-
-
-
-
-
     const collectionWithProducts = await db.collection.findUnique({
       where: { collectionId: collectionId },
       include: {
@@ -379,36 +315,36 @@ export async function handleUpdateCollection(payload: any, shop: string, admin: 
     });
 
 
-    // const graphqlId = `gid://shopify/Collection/${payload.id}`;
-    //
-    // const query = `
-    //   query GetCollectionProducts($id: ID!) {
-    //     collection(id: $id) {
-    //       id
-    //       handle
-    //       products(first: 250) {
-    //         edges {
-    //           node {
-    //             id
-    //             handle
-    //           }
-    //         }
-    //       }
-    //     }
-    //   }
-    // `;
-    //
-    // const res = await admin.graphql(query, {
-    //   variables: { id: graphqlId },
-    // })
-    //
-    //
-    // const json = await res.json();
-    //
-    // const products =
-    //   json.data?.collection?.products?.edges?.map((e: any) => e.node) ?? [];
+    const graphqlId = `gid://shopify/Collection/${payload.id}`;
 
-    // console.log("products:", products);
+    const query = `
+      query GetCollectionProducts($id: ID!) {
+        collection(id: $id) {
+          id
+          handle
+          products(first: 250) {
+            edges {
+              node {
+                id
+                handle
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const res = await admin.graphql(query, {
+      variables: { id: graphqlId },
+    })
+
+
+    const json = await res.json();
+
+    const products =
+      json.data?.collection?.products?.edges?.map((e: any) => e.node) ?? [];
+
+    console.log("products:", products);
 
     // Sync product relationships
     await db.collection.update({
@@ -503,6 +439,83 @@ export async function handleDiscountCreateOrUpdate(
       `(type=${norm.type}, amount=${norm.amount}, appliesTo=${norm.appliesTo}, ` +
       `products=${norm.productIds.length}, collections=${norm.collectionIds.length})`
     );
+
+    /**
+        * Recalculate omnibus pricing for all affected products.
+        * We build a set of product IDs directly targeted by the discount, and
+        * include any additional products from targeted collections.
+        */
+    const touchedProductIds = new Set<bigint>();
+
+    // Products explicitly included in the discount
+    for (const prodIdStr of norm.productIds) {
+      touchedProductIds.add(toBigIntId(prodIdStr));
+    }
+
+    // Products from collections targeted by the discount
+    for (const collIdStr of norm.collectionIds) {
+      const collNumericId = toBigIntId(collIdStr);
+      const collectionProducts = await db.product.findMany({
+        where: {
+          collections: {
+            some: { collectionId: collNumericId },
+          },
+        },
+        select: { productId: true },
+      });
+      for (const { productId } of collectionProducts) {
+        touchedProductIds.add(productId);
+      }
+    }
+
+
+    for (const productId of touchedProductIds) {
+      const variants = await db.variant.findMany({
+        where: { productId },
+        select: { id: true, variantId: true },
+      });
+      for (const variant of variants) {
+        // fetch the latest price history entry
+        const latest = await db.priceHistory.findFirst({
+          where: { variantId: variant.id },
+          orderBy: { date: "desc" },
+        });
+        if (!latest) continue;
+
+        const originalPrice = Number(latest.price);
+        let discountedPrice = originalPrice;
+        if (norm.type === "PERCENTAGE") {
+          discountedPrice = originalPrice * (1 - norm.amount / 100);
+        } else {
+          // norm.amount here is in the same units as your prices
+          discountedPrice = originalPrice - norm.amount;
+        }
+
+        await db.priceHistory.create({
+          data: {
+            variant: { connect: { id: variant.id } },
+            date: new Date(),
+            market: latest.market,
+            price: latest.price, // original price
+            compareAtPrice: latest.price, // original compare-at price
+            priceWithDiscounts: new Prisma.Decimal(discountedPrice),
+            compareAtPriceWithDiscounts: latest.compareAtPrice,
+          },
+        });
+      }
+
+      await pushOmnibusForProduct(admin, shop, productId);
+    }
+
+    // Trigger omnibus recalculation for each affected product
+    for (const productId of touchedProductIds) {
+      await pushOmnibusForProduct(admin, shop, productId);
+    }
+
+
+
+
+
   } catch (err) {
     console.error("Error handling discount create/update:", err);
   }
@@ -529,7 +542,3 @@ export async function handleDiscountDelete(payload: any, shop: string) {
     console.error("Error deleting discount:", err);
   }
 }
-
-
-
-
