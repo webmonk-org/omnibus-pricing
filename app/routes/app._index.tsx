@@ -23,20 +23,12 @@ import ProductStatus from "app/components/product-status";
 import { ReviewBanner } from "app/components/review-banner";
 import { QuestionCircleIcon } from "@shopify/polaris-icons";
 import db from "app/db.server"
-import type { ComplianceKey, Settings } from "app/types";
+import { DEFAULT_SETTINGS, type ComplianceKey, type Settings } from "app/types";
 
 
-const DEFAULT_SETTINGS: Settings = {
-  timeframe: 30,
-  campaignLength: 60,
-  discounts: "include",
-  selectedDiscountIds: [],
-};
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-
-
 
   const dbSession = await db.session.findFirst({
     where: { shop: session.shop },
@@ -56,7 +48,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         id: session.id,
       },
       data: {
-        settings
+        settings: JSON.stringify(settings)
       }
     })
   }
@@ -89,18 +81,40 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
   console.log("complianceStats:", complianceStats);
 
+  const parsed: Settings =
+    typeof dbSession?.settings === "string"
+      ? JSON.parse(dbSession?.settings)
+      : dbSession?.settings;
+
+  const timeframeDays = parsed.timeframe ?? 30;
+  const since = new Date(Date.now() - timeframeDays * 24 * 60 * 60 * 1000);
+
+  const recordsPerVariant = await db.priceHistory.groupBy({
+    by: ['variantId'],
+    where: { date: { gte: since } },
+    _count: { id: true },
+  });
+
+  const daysCollected = Math.min(
+    ...recordsPerVariant.map((row) => row._count.id),
+  );
+
+  // This would return 2 for your current data
+  console.log(`${daysCollected} / ${timeframeDays} days collected`);
+
   return Response.json({
     calculationInProgress: dbSession?.calculationInProgress,
-    complianceStats
+    complianceStats,
+    daysCollected,
+    timeframeDays
   });
 };
 
 export default function Index() {
-  const { calculationInProgress, complianceStats } = useLoaderData<typeof loader>();
+  const { calculationInProgress, complianceStats, daysCollected, timeframeDays } = useLoaderData<typeof loader>();
   // const fetcher = useFetcher();
 
   // const summaryFetcher = useFetcher()
-
 
   const [dispayBanner, setDisplayBanner] = useState(true);
   const [active, setActive] = useState(false)
@@ -346,7 +360,7 @@ export default function Index() {
                   Price history information
                 </Text>
                 <Text variant="bodyMd" as="p">
-                  2 / 30 days collected
+                  {daysCollected} / {timeframeDays} days collected
                 </Text>
                 <Text variant="bodySm" as="p" tone="subdued">
                   Until we have the full price history, compliancy cannot be
