@@ -2,7 +2,7 @@ import type { SessionData } from "@remix-run/node";
 import db from "app/db.server";
 import type { AdminApiContextWithoutRest } from "node_modules/@shopify/shopify-app-remix/dist/ts/server/clients";
 import { fetchCollection, processBulkData } from "./process-bulk-data";
-import { updateCalculationInProgress, toBigIntId, fetchAndNormalizeDiscount, createPriceHistoryFromProductWebhook } from "./helpers"
+import { updateCalculationInProgress, toBigIntId, fetchAndNormalizeDiscount, createPriceHistoryFromProductWebhook, moneyToMinorUnits } from "./helpers"
 
 import { pushOmnibusForProduct } from "./calculate-omnibus-price";
 
@@ -480,12 +480,18 @@ export async function handleDiscountCreateOrUpdate(
           where: { variantId: variant.id },
           orderBy: { date: "desc" },
         });
+
+        console.log("Latest is (discount curd) : ", latest);
+
         if (!latest) continue;
 
-        const originalPrice = Number(latest.price);
+        const originalPrice = moneyToMinorUnits(latest.price.toString());
         let discountedPrice = originalPrice;
         if (norm.type === "PERCENTAGE") {
-          discountedPrice = originalPrice * (1 - norm.amount / 100);
+          // discountedPrice = originalPrice * (1 - norm.amount / 100);
+          discountedPrice = Math.round(
+            originalPrice * (1 - norm.amount / 100)
+          );
         } else {
           // norm.amount here is in the same units as your prices
           discountedPrice = originalPrice - norm.amount;
@@ -504,16 +510,13 @@ export async function handleDiscountCreateOrUpdate(
         });
       }
 
+      // Trigger omnibus recalculation for each affected product
       await pushOmnibusForProduct(admin, shop, productId);
     }
 
-    // Trigger omnibus recalculation for each affected product
-    for (const productId of touchedProductIds) {
-      await pushOmnibusForProduct(admin, shop, productId);
-    }
-
-
-
+    // for (const productId of touchedProductIds) {
+    //   await pushOmnibusForProduct(admin, shop, productId);
+    // }
 
 
   } catch (err) {
