@@ -1,0 +1,38 @@
+{{ 'omnibus-price.css' | asset_url | stylesheet_tag }}
+
+  {% assign current_variant = product.selected_or_first_available_variant %}
+
+  {% if current_variant %}
+    {% assign omnibus_summary_mf = current_variant.metafields["$app:omnibus"].summary %}
+    {% if omnibus_summary_mf %}
+      {% assign summary = omnibus_summary_mf.value %}
+    {% endif %}
+
+      <div class="omnibus-summary">
+        {% if summary.market %}
+          <p>
+          Lowest prior price:
+          {% if summary.omnibus_price %}
+            <strong>{{ summary.omnibus_price }}</strong>
+          {% else %}
+            <strong>{{ summary.current_price }}</strong>
+          {% endif %}
+            <span>{{summary.market}}</span>
+            (<span>{{ summary.last_calculated_at | date: "%B %d, %Y" }}</span>)
+          </p>
+        {% endif %}
+      </div>
+    {% else %}
+      <p>Omnibus pricing data not available for this variant yet.</p>
+  {% else %}
+    <p>No variant selected.</p>
+  {% endif %}
+
+{% schema %}
+{
+  "name": "Omnibus price summary",
+  "target": "section",
+  "templates": ["product"],
+  "settings": []
+}
+{% endschema %}

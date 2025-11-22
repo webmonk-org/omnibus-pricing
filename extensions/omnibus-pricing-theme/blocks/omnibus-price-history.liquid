@@ -1,0 +1,54 @@
+{{ 'omnibus-price-history.css' | asset_url | stylesheet_tag }}
+
+{%- assign current_variant = product.selected_or_first_available_variant -%}
+{%- assign omnibus_history_mf = current_variant.metafields["$app:omnibus"]["price_history"] -%}
+
+<div class="omni-price-history">
+  <button type="button" class="omni-price-history__button">
+    <span class="omni-price-history__icon">€</span>
+    <span>Price history</span>
+  </button>
+<div class="omni-price-history__tooltip">
+    {% if omnibus_history_mf and omnibus_history_mf.value %}
+      {% assign history = omnibus_history_mf.value %}
+      {% assign entries = history.entries %}
+
+      {% if entries and entries.size > 0 %}
+        <div class="omni-price-history__title">
+          Price changes in the past {{ history.timeframe_days }} days
+        </div>
+
+        <ul class="omnibus-history-list">
+          {% for entry in entries %}
+            <li>
+              <span>
+              {{ entry.date | date: "%B %d, %Y" }}
+              </span>
+              <span>
+                {{ entry.price | times: 100 | money }} {{ history.market }}
+              </span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="omnibus-history-empty">
+          No price changes in the selected period.
+        </div>
+      {% endif %}
+    {% else %}
+      <div class="omnibus-history-empty">
+        No price history available yet.
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% schema %}
+{
+  "name": "Omnibus price history",
+  "target": "section",
+  "templates": ["product"],
+  "settings": []
+}
+{% endschema %}
+
+
