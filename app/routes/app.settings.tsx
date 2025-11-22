@@ -115,25 +115,24 @@ export default function Settings() {
     items: DiscountItem[]; pageInfo: any,
     defaults: Settings;
   }>();
-  console.log("Items are : ", items);
 
   const fetcher = useFetcher()
-  const [priceTimeFrame, setPriceTimeFrame] = useState(defaults.timeframe);
-  const [compaignLength, setCompaignLength] = useState(defaults.campaignLength);
+  const [priceTimeFrame, setPriceTimeFrame] = useState(defaults.timeframe.toString());
+  const [compaignLength, setCompaignLength] = useState(defaults.campaignLength.toString());
   const [discounts, setDiscounts] = useState(defaults.discounts)
-  const [selectedDiscountIds, setSelectedDiscountIds] = useState<string[]>(defaults.discounts);
+  const [selectedDiscountIds, setSelectedDiscountIds] = useState<string[]>(defaults.selectedDiscountIds);
   const [checked, setChecked] = useState(false);
 
-  const handlePriceTimeFrameChange = useCallback((value: number) => {
+  const handlePriceTimeFrameChange = useCallback((value: string) => {
     setPriceTimeFrame(value)
   }, [])
 
-  const handleCompaignLengthChange = useCallback((value: number) => {
+  const handleCompaignLengthChange = useCallback((value: string) => {
     setCompaignLength(value)
   }, [])
 
   const handleSelectChange = useCallback(
-    (_: boolean, newValue: string) => {
+    (_: boolean, newValue: "include" | "exclude") => {
       console.log("new value is :", newValue);
       setDiscounts(newValue)
     },
@@ -179,7 +178,7 @@ export default function Settings() {
                   Calculatation
                 </Text>
                 <TextField
-                  value={priceTimeFrame}
+                  value={priceTimeFrame.toString()}
                   onChange={handlePriceTimeFrameChange}
                   label="Lowest price calculation timeframe"
                   type="number"
@@ -192,7 +191,7 @@ export default function Settings() {
                 />
 
                 <TextField
-                  value={compaignLength}
+                  value={compaignLength.toString()}
                   onChange={handleCompaignLengthChange}
                   label="Max campaign length"
                   type="number"
