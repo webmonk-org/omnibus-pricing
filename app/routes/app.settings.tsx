@@ -17,12 +17,12 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { authenticate } from "app/shopify.server";
 import db from "app/db.server"
 import { DiscountSelector } from "app/components/discount-selector";
-import type { DiscountItem } from "app/types";
+import type { DiscountItem, Settings } from "app/types";
 
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
 
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
   const query = `
   query DiscountList($first: Int!, $after: String) {
@@ -78,7 +78,23 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     };
   });
 
-  return Response.json({ items, pageInfo: data.data.discountNodes.pageInfo });
+
+  const dbSession = await db.session.findFirst({
+    where: { shop: session.shop },
+    select: {
+      calculationInProgress: true,
+      settings: true,
+    }
+  });
+
+
+  const defaults: Settings =
+    typeof dbSession?.settings === "string"
+      ? JSON.parse(dbSession?.settings)
+      : dbSession?.settings;
+
+
+  return Response.json({ items, pageInfo: data.data.discountNodes.pageInfo, defaults });
 };
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -95,21 +111,24 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Settings() {
-  const { items } = useLoaderData<{ items: DiscountItem[]; pageInfo: any }>();
+  const { items, defaults } = useLoaderData<{
+    items: DiscountItem[]; pageInfo: any,
+    defaults: Settings;
+  }>();
   console.log("Items are : ", items);
 
   const fetcher = useFetcher()
-  const [priceTimeFrame, setPriceTimeFrame] = useState("30");
-  const [compaignLength, setCompaignLength] = useState("60")
-  const [discounts, setDiscounts] = useState("include")
-  const [selectedDiscountIds, setSelectedDiscountIds] = useState<string[]>([]);
+  const [priceTimeFrame, setPriceTimeFrame] = useState(defaults.timeframe);
+  const [compaignLength, setCompaignLength] = useState(defaults.campaignLength);
+  const [discounts, setDiscounts] = useState(defaults.discounts)
+  const [selectedDiscountIds, setSelectedDiscountIds] = useState<string[]>(defaults.discounts);
   const [checked, setChecked] = useState(false);
 
-  const handlePriceTimeFrameChange = useCallback((value: string) => {
+  const handlePriceTimeFrameChange = useCallback((value: number) => {
     setPriceTimeFrame(value)
   }, [])
 
-  const handleCompaignLengthChange = useCallback((value: string) => {
+  const handleCompaignLengthChange = useCallback((value: number) => {
     setCompaignLength(value)
   }, [])
 
